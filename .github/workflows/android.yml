@@ -53,6 +53,23 @@ jobs:
           grep -q "PASS: 8x8 match-three" build/smoke.log
           if grep -E "SCRIPT ERROR|SMOKE FAIL" build/smoke.log; then exit 1; fi
 
+      - name: Capture actual Godot screens for visual QA
+        continue-on-error: true
+        run: |
+          mkdir -p build/visual
+          timeout 35s xvfb-run -a -s "-screen 0 1024x2000x24" godot --path . --resolution 720x1440 --rendering-method gl_compatibility --script res://tools/capture.gd
+          test -s build/visual/menu.png
+          test -s build/visual/runes.png
+
+      - name: Upload visual QA screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kady-Glyph-Quest-Visual-v0.2.0
+          path: build/visual/*.png
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: Set Android export paths
         run: |
           mkdir -p "$HOME/.config/godot"
