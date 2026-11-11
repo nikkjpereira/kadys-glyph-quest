@@ -72,6 +72,14 @@ jobs:
           godot --headless --path . --export-debug "Android" build/kadys-glyph-quest-v0.1.0-debug.apk
           test -s build/kadys-glyph-quest-v0.1.0-debug.apk
 
+      - name: Verify APK signatures and Android metadata
+        run: |
+          APK="build/kadys-glyph-quest-v0.1.0-debug.apk"
+          "$ANDROID_HOME/build-tools/35.0.1/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.1/aapt" dump badging "$APK" | head -25
+          "$ANDROID_HOME/build-tools/35.0.1/zipalign" -c -P 16 -v 4 "$APK"
+          sha256sum "$APK"
+
       - name: Make APK available to testers
         uses: actions/upload-artifact@v4
         with:
