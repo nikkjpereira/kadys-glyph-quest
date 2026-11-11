@@ -89,9 +89,13 @@ jobs:
         run: |
           APK="build/kadys-glyph-quest-v0.1.1-debug.apk"
           "$ANDROID_HOME/build-tools/35.0.1/apksigner" verify --verbose --print-certs "$APK" | tee build/signatures.txt
-          grep -q 'Verified using v1 scheme (JAR signing): true' build/signatures.txt
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' build/signatures.txt
           grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' build/signatures.txt
+          # Android 7+ chooses v2/v3 during verification. Force a pre-v2
+          # platform level to test whether the JAR/v1 signature also works.
+          "$ANDROID_HOME/build-tools/35.0.1/apksigner" verify --verbose --min-sdk-version 23 "$APK" | tee build/legacy-signatures.txt
+          grep -q 'Verified using v1 scheme (JAR signing): true' build/legacy-signatures.txt
+          jarsigner -verify "$APK"
           "$ANDROID_HOME/build-tools/35.0.1/aapt" dump badging "$APK" | head -25
           "$ANDROID_HOME/build-tools/35.0.1/zipalign" -c -P 16 -v 4 "$APK"
           sha256sum "$APK"
