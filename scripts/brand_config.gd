@@ -2,7 +2,9 @@ extends RefCounted
 ## Rename-safe metadata. Updating a public store brand does not require
 ## changing the Android package ID (which would break installed apps).
 const DISPLAY_NAME := "Kady's Glyph Quest"
-const VERSION := "0.2.0"
+const TITLE_LINE_1 := "KADY'S"
+const TITLE_LINE_2 := "GLYPH QUEST"
+const VERSION := "0.3.0"
 const ANDROID_APPLICATION_ID := "com.nefariousmedia.kadysglyphquest"
 const ADS_ENABLED := false
 const IN_APP_PURCHASES_ENABLED := false

@@ -1,0 +1,4 @@
+Kady's Glyph Quest v0.3 illustration assets
+Generated for this project from original user-approved concept and original image-generation outputs.
+Includes layered jeweled tile images, UI frames, world imagery, immersive backgrounds, buttons, panels, and effects.
+The glyph characters, levels, objectives, and buttons remain dynamic and live in Godot.

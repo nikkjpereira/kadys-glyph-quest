@@ -1,9 +1,34 @@
+# Kady's Glyph Quest v0.3.0 — Render Art Edition
+
+This release rebuilds the Godot presentation around the original polished fantasy render. The working 48-level offline matching game, progress storage, settings, and world system from v0.2 are retained.
+
+**New visual system**
+- New illustrated backgrounds derived from the original visual concept and separately generated fantasy artwork.
+- New octagonal gemstone sprites cleaned for dynamic Unicode glyph overlays, never a static board screenshot.
+- Original-style carved blue-stone and ornate gold board frame, parchment objectives, gold ribbon and gemstone HUD medallions.
+- Painted world previews, glossy booster artwork and a dynamically titled logo (for future renaming).
+- Better glow, particle sprites, effects, and illustrated settings/level/result screens.
+- Original 44-second looping enchanted-library soundtrack with separate music and effects volume controls.
+- New app launcher icon and display font.
+
+**Source**: `scripts/main.gd`, `scripts/save_data.gd`, `assets/v03/`, `assets/audio/enchanted_library.ogg`.
+
+**Testing**: GitHub Actions imports and checks Godot scripts, executes match-3/saving/soundtrack smoke tests, captures real Godot screenshots, builds and verifies the APK's v1-v3 signatures, and installs it on a clean Android 16 emulator.
+
+**Installation**: Get the **verified ZIP** from the v0.3 GitHub release, extract its APK, then install using Android Files. Older debug builds use different ephemeral signing keys and cannot be updated in place. Uninstalling an old test APK will erase its local save. A permanent test signing key and export/import save workflow are needed before public tester rollout.
+
+**Monetization**: Ads and in-app purchases remain disabled; the architecture preserves a dedicated brand/config file and future reserved product IDs. The game may target younger players, so child-directed ad and purchase compliance needs review before a store launch.
+
+**Artwork licensing**: Concept-derived and AI-generated graphics are included in the project for use with this game. The included DejaVu Serif font retains its original open-source license; Unicode Noto fonts retain their SIL OFL license. See existing license documentation.
+
+---
+
 # Kady's Glyph Quest
-**Version 0.2.0 — Storybook Edition**
+**Version 0.3.0 — Render Art Edition**
 
 An offline 2D match-3 puzzle adventure for Android, built in Godot 4.7.2 / GDScript. Name and brand are provisional. The Android application ID remains `com.nefariousmedia.kadysglyphquest` for update continuity.
 
-## Install v0.2.0
+## Install v0.3.0
 
 Download the APK from [Releases](https://github.com/nikkjpereira/kadys-glyph-quest/releases). Install via Android Files (not a split-APK installer). The GitHub Actions [APK build](https://github.com/nikkjpereira/kadys-glyph-quest/actions/workflows/android.yml) signs with **v1, v2 and v3** and verifies certificates and archive alignment.
 
@@ -47,7 +72,7 @@ Run the game locally with Godot 4.7.2 and the project file `project.godot`.
 
 ## Future monetization design (NOT ENABLED)
 
-v0.2.0 intentionally contains no ad SDK, billing SDK, trackers, store products, or paywalls. Ads and purchases must be implemented through independently testable Android/Google Play adapters. Do not simulate an ad view or a purchase by granting permanent entitlements before Play Billing verification.
+v0.3.0 intentionally contains no ad SDK, billing SDK, trackers, store products, or paywalls. Ads and purchases must be implemented through independently testable Android/Google Play adapters. Do not simulate an ad view or a purchase by granting permanent entitlements before Play Billing verification.
 
 Recommended model:
 - Opt-in rewarded ads for limited booster rewards, never during an active swipe or forced after level failure.

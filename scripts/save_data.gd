@@ -9,7 +9,9 @@ const DEFAULT_PREFS := {
     "reduce_motion": false,
     "color_assist": false,
     "auto_hints": true,
-    "large_text": false
+    "large_text": false,
+    "music_volume": 85,
+    "sfx_volume": 85
 }
 var data: Dictionary = {}
 
@@ -82,6 +84,14 @@ func toggle_pref(name: String) -> void:
         return
     data["prefs"][name] = not pref(name)
     save_all()
+
+func setting_int(name: String, fallback: int = 85) -> int:
+    return clampi(int(data["prefs"].get(name, fallback)), 0, 100)
+
+func set_int(name: String, value: int) -> void:
+    if name in ["music_volume", "sfx_volume"]:
+        data["prefs"][name] = clampi(value, 0, 100)
+        save_all()
 
 func unlocked_level(world: int) -> int:
     return clampi(int(data["unlocked"][world]), 1, 12)

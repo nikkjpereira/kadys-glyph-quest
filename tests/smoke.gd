@@ -7,6 +7,24 @@ func _initialize() -> void:
 func _run() -> void:
     var game = load("res://scenes/Main.tscn").instantiate()
     root.add_child(game)
+    if not ResourceLoader.exists("res://assets/v03/board_gold_frame.png"):
+        push_error("v0.3 render artwork missing")
+        quit(1)
+        return
+    if not ResourceLoader.exists("res://assets/audio/enchanted_library.ogg"):
+        push_error("v0.3 audible music missing")
+        quit(1)
+        return
+    if game.music_player == null or game.music_player.stream == null:
+        push_error("v0.3 soundtrack not assigned")
+        quit(1)
+        return
+    game.save.set_int("music_volume",70)
+    game.save.set_int("sfx_volume",40)
+    if game.save.setting_int("music_volume") != 70 or game.save.setting_int("sfx_volume") != 40:
+        push_error("Volume settings are not persisted")
+        quit(1)
+        return
     game.save.data["tutorial_done"] = true
     for world in range(4):
         game._start_level(world,1)
