@@ -1,27 +1,66 @@
 extends SceneTree
 
+const SaveData = preload("res://scripts/save_data.gd")
 func _initialize() -> void:
-    call_deferred("_check")
+    call_deferred("_run")
 
-func _check() -> void:
+func _run() -> void:
     var game = load("res://scenes/Main.tscn").instantiate()
     root.add_child(game)
+    game.save.data["tutorial_done"] = true
     for world in range(4):
-        game.world_index = world
-        game._start_game()
-        if game.board.size() != 56 or not game._find_matches().is_empty():
-            push_error("Broken starting board for world " + str(world))
-            quit(1)
+        game._start_level(world,1)
+        if game.state!="playing":
+            _fail("Did not enter gameplay",world)
             return
-        var swap: Array = game._find_hint()
-        if swap.size() != 2:
-            push_error("No moves available in world " + str(world))
-            quit(1)
+        if game.board.size()!=64 or not game._find_matches().is_empty():
+            _fail("Board has wrong size or pre-existing matches",world)
             return
-        game._attempt_swap(swap[0], swap[1])
-        if game.moves_left != 23 or game.score <= 0:
-            push_error("Scoring/swap failed in world " + str(world))
-            quit(1)
+        var move: Array = game._find_hint()
+        if move.size()!=2 or not game._adjacent(move[0],move[1]):
+            _fail("No playable swap",world)
             return
-    print("PASS: four worlds, valid board and scoring")
+        game._attempt_swap(move[0],move[1])
+        if game.moves_left!=24 or game.score<=0:
+            _fail("Swapping did not consume one move and score",world)
+            return
+        if game.save.data["current"].is_empty():
+            _fail("Successful move did not autosave",world)
+            return
+        game.collected=game.target_amount
+        game.objective_type="collect"
+        game._finish_or_save()
+        if game.state!="victory" or game.earned_stars<1:
+            _fail("Victory did not end game",world)
+            return
+        if game.save.unlocked_level(world)<2:
+            _fail("Victory did not unlock level 2",world)
+            return
+        if not game.save.data["current"].is_empty():
+            _fail("Victory did not clear active game",world)
+            return
+    game._start_level(0,1)
+    game.moves_left=0
+    game.collected=0
+    game.state="playing"
+    game._finish_or_save()
+    if game.state!="failure":
+        _fail("Move exhaustion did not trigger failure",0)
+        return
+    var progress := SaveData.new()
+    progress.load_all()
+    if progress.unlocked_level(0)<2:
+        _fail("Saved progress did not survive reload",0)
+        return
+    progress.toggle_pref("reduce_motion")
+    var check := SaveData.new()
+    check.load_all()
+    if check.pref("reduce_motion")!=progress.pref("reduce_motion"):
+        _fail("Settings did not persist",0)
+        return
+    print("PASS: 8x8 match-three, 4 worlds, victory, failure, autosave, settings persistence")
     quit(0)
+
+func _fail(reason: String, world: int) -> void:
+    push_error("SMOKE FAIL world %s: %s" % [world,reason])
+    quit(1)
