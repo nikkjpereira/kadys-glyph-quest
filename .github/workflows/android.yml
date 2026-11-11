@@ -60,6 +60,8 @@ jobs:
           timeout 35s xvfb-run -a -s "-screen 0 1024x2000x24" godot --path . --resolution 720x1440 --rendering-method gl_compatibility --script res://tools/capture.gd
           test -s build/visual/menu.png
           test -s build/visual/runes.png
+          test -s build/visual/settings.png
+          test -s build/visual/victory.png
 
       - name: Upload visual QA screenshots
         if: always()
