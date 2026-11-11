@@ -1,0 +1,7 @@
+.godot/
+build/
+assets/fonts/
+assets/icon.png
+.DS_Store
+*.apk
+*.aab

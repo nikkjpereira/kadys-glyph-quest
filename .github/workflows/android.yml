@@ -1,0 +1,74 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Verify and build Android debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: SDK components
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "build-tools;35.0.1" "platforms;android-35" "ndk;28.1.13356709" "cmake;3.10.2.4988404"
+
+      - name: Godot 4.7.2 and export templates
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.7.2
+          use-dotnet: false
+          include-templates: true
+
+      - name: Prepare fonts and launcher icons
+        run: python3 tools/prepare_assets.py
+
+      - name: Import project and check GDScript syntax
+        run: godot --headless --path . --editor --import
+
+      - name: Gameplay smoke test
+        run: godot --headless --path . --script res://tests/smoke.gd
+
+      - name: Set Android export paths
+        run: godot --headless --path . --editor --script res://tools/configure_android.gd
+
+      - name: Create temporary debug signing key
+        run: |
+          mkdir -p build
+          keytool -genkeypair -keystore "$RUNNER_TEMP/kady-debug.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Build signed debug APK
+        env:
+          GODOT_ANDROID_KEYSTORE_DEBUG_PATH: /tmp/kady-debug.keystore
+          GODOT_ANDROID_KEYSTORE_DEBUG_USER: androiddebugkey
+          GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
+        run: |
+          cp "$RUNNER_TEMP/kady-debug.keystore" /tmp/kady-debug.keystore
+          godot --headless --path . --export-debug "Android" build/kadys-glyph-quest-v0.1.0-debug.apk
+          test -s build/kadys-glyph-quest-v0.1.0-debug.apk
+
+      - name: Make APK available to testers
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kady-Glyph-Quest-Android-v0.1.0
+          path: build/kadys-glyph-quest-v0.1.0-debug.apk
+          if-no-files-found: error
+          retention-days: 30
