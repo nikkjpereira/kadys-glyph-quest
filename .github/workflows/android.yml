@@ -69,13 +69,29 @@ jobs:
           GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
         run: |
           cp "$RUNNER_TEMP/kady-debug.keystore" /tmp/kady-debug.keystore
-          godot --headless --path . --export-debug "Android" build/kadys-glyph-quest-v0.1.0-debug.apk
-          test -s build/kadys-glyph-quest-v0.1.0-debug.apk
+          godot --headless --path . --export-debug "Android" build/kadys-glyph-quest-v0.1.1-debug.apk
+          test -s build/kadys-glyph-quest-v0.1.1-debug.apk
+
+      - name: Add legacy and modern APK signatures
+        run: |
+          APK="build/kadys-glyph-quest-v0.1.1-debug.apk"
+          "$ANDROID_HOME/build-tools/35.0.1/apksigner" sign \
+            --ks "$RUNNER_TEMP/kady-debug.keystore" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            "$APK"
 
       - name: Verify APK signatures and Android metadata
         run: |
-          APK="build/kadys-glyph-quest-v0.1.0-debug.apk"
-          "$ANDROID_HOME/build-tools/35.0.1/apksigner" verify --verbose --print-certs "$APK"
+          APK="build/kadys-glyph-quest-v0.1.1-debug.apk"
+          "$ANDROID_HOME/build-tools/35.0.1/apksigner" verify --verbose --print-certs "$APK" | tee build/signatures.txt
+          grep -q 'Verified using v1 scheme (JAR signing): true' build/signatures.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' build/signatures.txt
+          grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' build/signatures.txt
           "$ANDROID_HOME/build-tools/35.0.1/aapt" dump badging "$APK" | head -25
           "$ANDROID_HOME/build-tools/35.0.1/zipalign" -c -P 16 -v 4 "$APK"
           sha256sum "$APK"
@@ -83,7 +99,7 @@ jobs:
       - name: Make APK available to testers
         uses: actions/upload-artifact@v4
         with:
-          name: Kady-Glyph-Quest-Android-v0.1.0
-          path: build/kadys-glyph-quest-v0.1.0-debug.apk
+          name: Kady-Glyph-Quest-Android-v0.1.1
+          path: build/kadys-glyph-quest-v0.1.1-debug.apk
           if-no-files-found: error
           retention-days: 30
