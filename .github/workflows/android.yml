@@ -48,7 +48,14 @@ jobs:
         run: godot --headless --path . --script res://tests/smoke.gd
 
       - name: Set Android export paths
-        run: godot --headless --path . --editor --script res://tools/configure_android.gd
+        run: |
+          mkdir -p "$HOME/.config/godot"
+          {
+            echo '[gd_resource type="EditorSettings" format=3]'
+            echo '[resource]'
+            printf 'export/android/android_sdk_path = "%s"\n' "$ANDROID_HOME"
+            printf 'export/android/java_sdk_path = "%s"\n' "$JAVA_HOME"
+          } > "$HOME/.config/godot/editor_settings-4.tres"
 
       - name: Create temporary debug signing key
         run: |
