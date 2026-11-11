@@ -87,7 +87,7 @@ func _ready() -> void:
         "NotoSansKR.ttf"
     ]:
         var f: Font = ui_font
-        var path := "res://assets/fonts/" + filename
+        var path: String = "res://assets/fonts/" + str(filename)
         if ResourceLoader.exists(path):
             var loaded := load(path) as Font
             if loaded != null:
@@ -211,7 +211,7 @@ func _rect(rect: Rect2, color: Color, radius: int = 16, border: Color = Color.TR
     draw_style_box(style, rect)
 
 func _panel(rect: Rect2, color: Color = PANEL, ornate: bool = true, fill_alpha: float = 0.94) -> void:
-    _rect(rect.translated(Vector2(0, 7)), Color(0.02, 0.01, 0.03, 0.51), 23)
+    _rect(Rect2(rect.position + Vector2(0, 7), rect.size), Color(0.02, 0.01, 0.03, 0.51), 23)
     var c := color
     c.a = fill_alpha
     _rect(rect, c, 22, Color("#d9ad62"), 4 if ornate else 2)
@@ -236,7 +236,7 @@ func _label(value: String, x: float, y: float, size: int, color: Color = CREAM, 
 func _button(rect: Rect2, value: String, selected_style: bool = false, size: int = 24) -> void:
     var base := Color("#eac67c") if selected_style else Color("#3d2b68")
     var edge := Color("#fff0bf") if selected_style else Color("#cda567")
-    _rect(rect.translated(Vector2(0,4)), Color("#14102a"), 16)
+    _rect(Rect2(rect.position + Vector2(0, 4), rect.size), Color("#14102a"), 16)
     _rect(rect, base, 17, edge, 3)
     _rect(Rect2(rect.position + Vector2(6, 6), Vector2(rect.size.x-12,8)), Color(1,1,1,0.13), 4)
     _label(value, rect.get_center().x, rect.position.y + rect.size.y / 2 + size / 3, size, INK if selected_style else CREAM, true)
@@ -308,7 +308,7 @@ func _draw_levels() -> void:
         _label(str(lvl) if unlocked else "LOCK",xx+73,yy+83,45,GOLD if unlocked else Color("#a49aad"),true)
         var entry: Dictionary = save.best_result(world_index,lvl)
         if unlocked:
-            _label(("★" .repeat(int(entry.get("stars",0))) if int(entry.get("stars",0))>0 else "NEW"),xx+73,yy+122,20,Color("#f8d273"),true)
+            _label(("★".repeat(int(entry.get("stars",0))) if int(entry.get("stars",0))>0 else "NEW"),xx+73,yy+122,20,Color("#f8d273"),true)
     _label("WORLD PROGRESS",360,1060,25,GOLD,true)
     _label("Earn stars and unlock the next challenge.",360,1110,22,CREAM,true)
     _button(Rect2(100,1192,520,77),"PLAY HIGHEST LEVEL",true,27)
@@ -443,7 +443,7 @@ func _draw_result(victory: bool) -> void:
     _panel(Rect2(55,377,610,685),Color("#40294d"),true)
     _label("QUEST COMPLETE!" if victory else "OUT OF MOVES",360,491,44,GOLD,true)
     if victory:
-        _label("★" .repeat(earned_stars),360,570,66,GOLD,true)
+        _label("★".repeat(earned_stars),360,570,66,GOLD,true)
     else:
         _label("TRY AGAIN",360,562,42,CREAM,true)
     _label("Level %s  •  %s" % [level,WORLD_SHORT[world_index]],360,634,23,CREAM,true)

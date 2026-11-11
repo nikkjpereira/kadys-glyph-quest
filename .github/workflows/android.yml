@@ -42,10 +42,16 @@ jobs:
         run: python3 tools/prepare_assets.py
 
       - name: Import project and check GDScript syntax
-        run: godot --headless --path . --editor --import
+        run: |
+          mkdir -p build
+          godot --headless --path . --editor --import 2>&1 | tee build/import.log
+          if grep -E "SCRIPT ERROR|Parse Error|Failed to load script" build/import.log; then exit 1; fi
 
       - name: Gameplay smoke test
-        run: godot --headless --path . --script res://tests/smoke.gd
+        run: |
+          timeout 50s godot --headless --path . --script res://tests/smoke.gd 2>&1 | tee build/smoke.log
+          grep -q "PASS: 8x8 match-three" build/smoke.log
+          if grep -E "SCRIPT ERROR|SMOKE FAIL" build/smoke.log; then exit 1; fi
 
       - name: Set Android export paths
         run: |
