@@ -131,10 +131,11 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Install APK on clean Android 16 (API 36)
+      - name: Install released APK on Android 17 Canary emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 36
+          api-level: 37
+          channel: 3
           target: google_apis
           arch: x86_64
           profile: pixel_7_pro
