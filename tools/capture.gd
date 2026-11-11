@@ -37,6 +37,7 @@ func _capture() -> void:
         return
     game.state="settings"
     game.settings_return="menu"
+    game.queue_redraw()
     for i in range(8):
         await process_frame
     await RenderingServer.frame_post_draw
@@ -45,6 +46,7 @@ func _capture() -> void:
         return
     game._start_level(0,1)
     game.collected=game.target_amount
+    game.score=2400
     game._finish_or_save()
     for i in range(8):
         await process_frame

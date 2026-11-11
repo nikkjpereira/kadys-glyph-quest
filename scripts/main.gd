@@ -521,7 +521,10 @@ func _gesture(start: Vector2, finish: Vector2) -> void:
                 state="settings"
             elif _inside(p,111,820,498,70):
                 save.reset_progress()
-                state="settings"
+                board.clear()
+                world_index=0
+                settings_return="menu"
+                state="menu"
     queue_redraw()
 
 func _back() -> void:
