@@ -106,7 +106,7 @@ func _ready() -> void:
         backgrounds.append(load("res://assets/v03/%s_scene.png" % item) as Texture2D)
     scene_bg = load("res://assets/v03/menu_scene.png") as Texture2D
     for item in ["title", "button", "ribbon", "parchment", "medallion", "spark"]:
-        var file_name := "hud_medallion" if item == "medallion" else ("title_plaque" if item == "title" else ("button_plaque" if item == "button" else ("magic_spark" if item == "spark" else item)))
+        var file_name: String = "hud_medallion" if item == "medallion" else ("title_plaque" if item == "title" else ("button_plaque" if item == "button" else ("magic_spark" if item == "spark" else item)))
         art[item] = load("res://assets/v03/" + file_name + ".png") as Texture2D
     art["board_frame"] = load("res://assets/v03/board_gold_frame.png") as Texture2D
     for i in range(4):
