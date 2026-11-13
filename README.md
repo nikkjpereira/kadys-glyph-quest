@@ -1,88 +1,70 @@
-# Kady's Glyph Quest v0.3.0 — Render Art Edition
-
-This release rebuilds the Godot presentation around the original polished fantasy render. The working 48-level offline matching game, progress storage, settings, and world system from v0.2 are retained.
-
-**New visual system**
-- New illustrated backgrounds derived from the original visual concept and separately generated fantasy artwork.
-- New octagonal gemstone sprites cleaned for dynamic Unicode glyph overlays, never a static board screenshot.
-- Original-style carved blue-stone and ornate gold board frame, parchment objectives, gold ribbon and gemstone HUD medallions.
-- Painted world previews, glossy booster artwork and a dynamically titled logo (for future renaming).
-- Better glow, particle sprites, effects, and illustrated settings/level/result screens.
-- Original 44-second looping enchanted-library soundtrack with separate music and effects volume controls.
-- New app launcher icon and display font.
-
-**Source**: `scripts/main.gd`, `scripts/save_data.gd`, `assets/v03/`, `assets/audio/enchanted_library.ogg`.
-
-**Testing**: GitHub Actions imports and checks Godot scripts, executes match-3/saving/soundtrack smoke tests, captures real Godot screenshots, builds and verifies the APK's v1-v3 signatures, and installs it on a clean Android 16 emulator.
-
-**Installation**: Get the **verified ZIP** from the v0.3 GitHub release, extract its APK, then install using Android Files. Older debug builds use different ephemeral signing keys and cannot be updated in place. Uninstalling an old test APK will erase its local save. A permanent test signing key and export/import save workflow are needed before public tester rollout.
-
-**Monetization**: Ads and in-app purchases remain disabled; the architecture preserves a dedicated brand/config file and future reserved product IDs. The game may target younger players, so child-directed ad and purchase compliance needs review before a store launch.
-
-**Artwork licensing**: Concept-derived and AI-generated graphics are included in the project for use with this game. The included DejaVu Serif font retains its original open-source license; Unicode Noto fonts retain their SIL OFL license. See existing license documentation.
-
----
-
 # Kady's Glyph Quest
-**Version 0.3.0 — Render Art Edition**
 
-An offline 2D match-3 puzzle adventure for Android, built in Godot 4.7.2 / GDScript. Name and brand are provisional. The Android application ID remains `com.nefariousmedia.kadysglyphquest` for update continuity.
+**v0.4.0 — Finite Quest + Arcade, UI Rebuild**
 
-## Install v0.3.0
+Offline Android puzzle game, Godot 4.7.2, GDScript. The consumer-facing name is provisional.
 
-Download the APK from [Releases](https://github.com/nikkjpereira/kadys-glyph-quest/releases). Install via Android Files (not a split-APK installer). The GitHub Actions [APK build](https://github.com/nikkjpereira/kadys-glyph-quest/actions/workflows/android.yml) signs with **v1, v2 and v3** and verifies certificates and archive alignment.
+## What changed in v0.4.0
 
-**Debug signing warning:** CI uses a newly generated debug key per build. Debug builds from different runs cannot be installed on top of each other. If Android says "App not installed", uninstall the older debug build first. This removes local progress. A stable, secure signing identity is required before distributing updates to testers or shipping on Google Play.
+**Quest Mode (the default)** now uses finite, non-replenishing boards. Matching 3+ identical glyphs removes them; the gems above fall down, and *no new gems spawn*. The round ends only when the board is empty or no legal swaps remain. Clear 100% for 3 stars; clear >=85% for 2 stars, >=65% for 1 star. A round below 65% is a loss and offers retry. There is no arbitrary Quest Mode move limit.
 
-## New in 0.2.0
+Puzzle generation is deterministic per world+level. The current level generator creates 6-gem row gadgets whose intended sequence is mathematically solvable. A known clearing path is verified for all 48 levels by CI, so every level can be cleared without ads or payments. The stone barriers at the sides prevent moving into those cells. Additional puzzle types and difficulty ramps are future work.
 
-- Storybook fantasy backgrounds with stone architecture, windows, lighting, lanterns, a library, and jewel tile art (generated assets).
-- Logo and decorative HUD, parchment objectives, gold level ribbons, jewel boards, effects and animated particles.
-- 8×8 board; four worlds: Runes, Egypt, East Asia, and Mixed.
-- 12 levels per world, 48 levels total, with progressively changing scores/move limits.
-- Two objective types: collect a particular glyph or reach a target score.
-- Correct win and loss screens, replay, next level, level selection and a pause menu.
-- Offline autosaved progress after every valid move; saving stars, unlocked levels, high scores, settings and the resumable current board.
-- Settings: music, sound effects, vibration, reduce motion, high-contrast gems, automatic hints, large text, reset progress.
-- Three free test boosters: hints, shuffles, and hammer. No purchases or ad watching required.
-- First-play tutorial; progress summary.
-- Scalable portrait UI and richer effects.
-- Lightweight ambient sound and SFX generated in-code.
+**Arcade Mode** remains selectable from the main menu. It preserves the v0.3 refill-based match-3 score/collect gameplay with limited moves.
 
-### How to play
+**Navigation / visual fixes:**
+- Home icon on the top-left saves the current run and returns immediately.
+- Small Pause icon on top-right opens Resume / Settings / Save & Home.
+- Board rim now renders behind the gems with added margins; none should be clipped.
+- Four clearly labeled boosters (Hint, Shuffle, Hammer, Undo) with charge counts.
+- Stone walls and empty sockets have distinct visuals. Different worlds apply subtle gem tints.
+- Gravity movement overlays, match sparkle effects, combo scoring.
+- World card selection, level selection, achievements/progress screen and audio settings preserved.
 
-Select a world, tap Begin Adventure, and swap adjoining gems to match at least three identical glyphs. Follow the goal above the board and finish before running out of moves. Press pause to save and exit. Next time choose Continue Adventure. Win to earn 1–3 stars and unlock the next level.
+**Boosters:**
+- Hint highlights a legal swap and costs a charge.
+- Shuffle rearranges *only existing gems*, preserving wall/empty positions; it does not add gems. It does not spend a charge if no playable shuffle can be found.
+- Hammer removes one selected gem (no replacements in Quest).
+- Undo reverts a move, plus score and booster balances, and costs one Undo charge. A short undo history is autosaved.
 
-## Files
+**Saving:** Settings, stars and unlocked levels from prior versions continue to load (same schema). The v0.3 in-progress *refill-mode board* is not reopened as a finite Quest board: on the first v0.4 continue attempt the incompatible board is discarded while completed levels and stars remain. The v0.4 preview package has a separate app ID and therefore separate saved progress by Android design.
 
-- `scripts/main.gd`: game drawing, menu/levels/settings, touch, sound, boosters, match-3, outcomes.
-- `scripts/save_data.gd`: offline JSON saving using atomic temporary file rename.
-- `scripts/brand_config.gd`: provisional name, package ID, monetization feature flags and future product concepts.
-- `tools/make_art.py`: reproducibly generates PNG art and WAV sounds using Pillow and standard Python.
-- `tools/prepare_assets.py`: downloads OFL Noto fonts and launcher icon.
-- `tests/smoke.gd`: smoke tests for 8×8 boards, playable moves, score, save, victory, failure.
-- `.github/workflows/android.yml`: automated Android APK build, signing verification and artifact publishing.
+**Sound:** Retains the v0.3 looping fantasy instrumental, sound effects, volume sliders, and accessibility settings.
 
-Generate assets with Python 3 + Pillow:
+## Testing
 
-    python3 tools/make_art.py
-    python3 tools/prepare_assets.py
+1. GitHub Actions imports the project and checks script syntax.
+2. Smoke tests check all 48 curated quest layouts, proof of complete clearing, no refill, undo, no premature victory, saving, hammer behavior, and preserved Arcade refill gameplay.
+3. Godot captures *actual* menu, Quest, Arcade, Settings, Pause, and Victory screenshots.
+4. The signed APK is checked with Android apksigner/JAR verification and installed into a clean Android 16 emulator.
+5. A verified ZIP with the signed APK and SHA-256 hash is published for hardware sideload testing. ZIP extraction has previously avoided damaged direct APK transfers.
 
-Run the game locally with Godot 4.7.2 and the project file `project.godot`.
+**Important signing caveat:** v0.3 debug APKs and v0.4 debug builds are signed with different ephemeral test certificates. A v0.4 **side-by-side** preview (distinct package ID) is preferred for first testing, so v0.3 and its local progress are unaffected. Do not uninstall a prior build without backing up its data. Persistent signing is an unresolved pre-production requirement.
 
-## Future monetization design (NOT ENABLED)
+## World design
+- Runes: Norse glyphs, enchanted stone room, blue-purple gem lighting.
+- Egypt: hieroglyphs, warm sandstone and gold.
+- East Asia: Han, kana and Hangul samples, jade/teal colors.
+- Mixed: magical archive with a cross-script assortment.
 
-v0.3.0 intentionally contains no ad SDK, billing SDK, trackers, store products, or paywalls. Ads and purchases must be implemented through independently testable Android/Google Play adapters. Do not simulate an ad view or a purchase by granting permanent entitlements before Play Billing verification.
+Glyphs are visual motifs, not translations or language-learning claims. The currently available illustrations are intentionally style-guided by the concept render; runtime gameplay, controls, and text are native Godot, not pasted onto an image.
 
-Recommended model:
-- Opt-in rewarded ads for limited booster rewards, never during an active swipe or forced after level failure.
-- A non-consumable "Remove Ads" in-app purchase, and optional cosmetic themes.
-- Consumable booster packs only with transparent pricing, a no-purchase route, and balanced gameplay.
-- Local entitlement cache plus Play Billing purchase acknowledgement, restoration and server-side verification for financial security if used.
-- Consent/age-appropriate ads and child-directed/families policies addressed BEFORE production. The audience includes younger players, so examine Google Play Families and applicable children's privacy requirements carefully.
-- Branding can be changed by updating art generation, app label and Store listing without changing the immutable Android application ID.
+## Monetization plan (not active)
+The source retains `scripts/brand_config.gd` with feature flags for a future store name, opt-in rewarded ads, an ad-removal purchase, and purely optional cosmetics/boosters. No ad SDK, payment processing, trackers, or network permissions are present in test builds. Complete store billing verification and youth/privacy policy review before enabling anything.
 
-Keep all current features offline; adding monetization must not make bought items necessary to progress.
+## Build locally
 
-## License
-Original code: MIT. Generated artwork/sounds: MIT alongside source. Unicode symbols are examples of real writing systems, not reading lessons. Bundled Noto Sans Runic, Egyptian Hieroglyphs, JP and KR fonts belong to their respective copyright holders and are licensed under SIL Open Font License 1.1; license copies download with the fonts.
+Install Godot 4.7.2 and Python 3 with Pillow.
+
+```bash
+python3 tools/prepare_assets.py
+python3 tools/make_art_v04.py
+godot --editor --path . --import
+godot --path .
+```
+
+The main files are `scripts/main.gd` (UI/game), `scripts/quest_rules.gd` (finite puzzles), `scripts/save_data.gd` (offline save), `assets/v03` and `assets/v04` (art).
+
+### License
+
+Original source and generated icon art: MIT. The fonts included during asset preparation are released under their respective SIL OFL 1.1 licenses; retain those license notices.

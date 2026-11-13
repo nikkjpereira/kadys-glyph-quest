@@ -5,3 +5,5 @@ assets/icon.png
 .DS_Store
 *.apk
 *.aab
+
+__pycache__/

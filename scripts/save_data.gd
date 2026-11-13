@@ -21,6 +21,9 @@ func _init() -> void:
 func reset_defaults() -> void:
     data = {
         "schema": 2,
+        "mode": "quest",
+        "arcade_best": 0,
+        "tutorial_done_v04": false,
         "levels": {},
         "unlocked": [1, 1, 1, 1],
         "prefs": DEFAULT_PREFS.duplicate(true),

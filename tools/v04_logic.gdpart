@@ -1,0 +1,379 @@
+func _configure_level(w: int, lvl: int) -> void:
+    world_index = w
+    level = lvl
+    score_target = 1400 + lvl * 410
+    target_glyph = (lvl - 1 + w) % 6
+    target_amount = 8 + (lvl - 1) % 5 * 2
+    objective_type = "clear" if mode == "quest" else ("score" if lvl % 3 == 0 else "collect")
+    moves_left = 25
+    moves_used = 0
+    score = 0
+    collected = 0
+    hints_left = 3
+    shuffles_left = 2
+    hammers_left = 2
+    undo_left = 3
+    undo_history.clear()
+    hammer_mode = false
+    selected = -1
+    hint_cells.clear()
+    status_message = "Clear the stones! No new gems will appear." if mode == "quest" else "Match 3 or more gems for points!"
+    earned_stars = 0
+    sparkles.clear()
+    popups.clear()
+    fall_ghosts.clear()
+    fall_age = 1.0
+
+func _start_level(w: int, lvl: int) -> void:
+    _configure_level(w, clampi(lvl, 1, LEVEL_COUNT))
+    _create_board()
+    start_gems = QuestRules.remaining(board)
+    state = "playing" if bool(save.data.get("tutorial_done_v04", false)) else "tutorial"
+    _save_current()
+    _reset_idle()
+    _music_state()
+    queue_redraw()
+
+func _start_game() -> void:
+    _start_level(world_index, 1)
+
+func _start_arcade(w: int) -> void:
+    mode = "arcade"
+    _start_level(w, 1)
+
+func _resume_saved() -> bool:
+    var current: Dictionary = save.data.get("current", {})
+    var restored: Array = current.get("board", [])
+    if restored.size() != ROWS * COLS:
+        return false
+    if not current.has("mode"):
+        # Never reinterpret a v0.3 refilling board as a v0.4 finite puzzle.
+        save.clear_current()
+        return false
+    mode = str(current.get("mode", "quest"))
+    if mode != "arcade":
+        mode = "quest"
+    _configure_level(clampi(int(current.get("world", 0)), 0, 3), clampi(int(current.get("level", 1)), 1, LEVEL_COUNT))
+    board.clear()
+    for value in restored:
+        board.append(clampi(int(value), QuestRules.WALL, 5))
+    score = maxi(0, int(current.get("score", 0)))
+    moves_left = maxi(0, int(current.get("moves", 25)))
+    moves_used = maxi(0, int(current.get("moves_used", 0)))
+    start_gems = maxi(1, int(current.get("start_gems", QuestRules.remaining(board))))
+    collected = maxi(0, int(current.get("collected", 0)))
+    hints_left = clampi(int(current.get("hints", 3)), 0, 3)
+    shuffles_left = clampi(int(current.get("shuffles", 2)), 0, 2)
+    hammers_left = clampi(int(current.get("hammers", 2)), 0, 2)
+    undo_left = clampi(int(current.get("undo_left", 3)), 0, 3)
+    undo_history.clear()
+    var prior: Array = current.get("undo_history", [])
+    for item in prior:
+        if typeof(item) == TYPE_DICTIONARY and item.get("board", []).size() == 64:
+            undo_history.append(item)
+    state = "playing" if bool(save.data.get("tutorial_done_v04", false)) else "tutorial"
+    _reset_idle()
+    queue_redraw()
+    return true
+
+func _save_current() -> void:
+    if board.size() != ROWS * COLS:
+        return
+    save.set_current({
+        "mode": mode, "world": world_index, "level": level, "board": board.duplicate(),
+        "score": score, "moves": moves_left, "moves_used": moves_used,
+        "start_gems": start_gems, "collected": collected,
+        "hints": hints_left, "shuffles": shuffles_left, "hammers": hammers_left,
+        "undo_left": undo_left, "undo_history": undo_history.duplicate(true)
+    })
+
+func _create_board() -> void:
+    if mode == "quest":
+        var scene: Dictionary = QuestRules.generate(world_index, level)
+        board = scene["board"].duplicate()
+        if not QuestRules.certified_solution(world_index, level):
+            push_error("Quest puzzle did not pass the clearing proof.")
+        return
+    # Preserve the original refill-based match-three for optional Arcade Mode.
+    for attempt in range(350):
+        board.resize(ROWS * COLS)
+        for row in range(ROWS):
+            for col in range(COLS):
+                var idx := row * COLS + col
+                var options: Array[int] = [0, 1, 2, 3, 4, 5]
+                if col >= 2 and board[idx - 1] == board[idx - 2]:
+                    options.erase(board[idx - 1])
+                if row >= 2 and board[idx - COLS] == board[idx - 2 * COLS]:
+                    options.erase(board[idx - COLS])
+                board[idx] = options.pick_random()
+        if not _find_hint().is_empty():
+            return
+    push_warning("No playable starting arcade board generated.")
+
+func _find_matches() -> Array[int]:
+    return QuestRules.scan(board)
+
+func _swap_values(a: int, b: int) -> void:
+    var v := board[a]
+    board[a] = board[b]
+    board[b] = v
+
+func _find_hint() -> Array[int]:
+    var options := QuestRules.legal_moves(board)
+    if options.is_empty():
+        return []
+    var best := options[0]
+    var best_points := -1
+    for pair in options:
+        _swap_values(pair.x, pair.y)
+        var hits := _find_matches().size()
+        _swap_values(pair.x, pair.y)
+        if hits > best_points:
+            best_points = hits
+            best = pair
+    return [best.x, best.y]
+
+func _snapshot() -> Dictionary:
+    return {
+        "board": board.duplicate(),
+        "score": score, "moves": moves_left, "moves_used": moves_used,
+        "collected": collected, "hints": hints_left,
+        "shuffles": shuffles_left, "hammers": hammers_left
+    }
+
+func _push_undo() -> void:
+    undo_history.append(_snapshot())
+    if undo_history.size() > 3:
+        undo_history.pop_front()
+
+func _undo_last() -> void:
+    if state != "playing":
+        return
+    if undo_left <= 0 or undo_history.is_empty():
+        status_message = "No Undo charges or moves to restore."
+        return
+    var last: Dictionary = undo_history.pop_back()
+    var restored: Array = last["board"]
+    board.clear()
+    for item in restored:
+        board.append(int(item))
+    score = int(last["score"])
+    moves_left = int(last["moves"])
+    moves_used = int(last["moves_used"])
+    collected = int(last["collected"])
+    hints_left = int(last["hints"])
+    shuffles_left = int(last["shuffles"])
+    hammers_left = int(last["hammers"])
+    undo_left -= 1
+    fall_ghosts.clear()
+    fall_age = 1.0
+    hint_cells.clear()
+    hammer_mode = false
+    status_message = "Last move restored. Choose carefully!"
+    _reset_idle()
+    _save_current()
+    _play_sound("tap")
+    queue_redraw()
+
+func _attempt_swap(a: int, b: int) -> void:
+    if state != "playing" or a < 0 or b < 0 or not _adjacent(a, b):
+        return
+    if board[a] < 0 or board[b] < 0:
+        status_message = "Stone walls and empty sockets cannot be swapped."
+        return
+    _swap_values(a, b)
+    if _find_matches().is_empty():
+        _swap_values(a, b)
+        status_message = "That swap didn't make a match."
+        _reset_idle()
+        return
+    # Record the original board, not the already-swapped one.
+    _swap_values(a, b)
+    _push_undo()
+    _swap_values(a, b)
+    moves_used += 1
+    if mode == "arcade":
+        moves_left -= 1
+    hint_cells.clear()
+    _resolve()
+    _finish_or_save()
+    _reset_idle()
+    queue_redraw()
+
+func _resolve() -> void:
+    var combo := 0
+    var total := 0
+    var points := 0
+    for step in range(24):
+        var hits := _find_matches()
+        if hits.is_empty():
+            break
+        combo += 1
+        total += hits.size()
+        var gain := hits.size() * 65 * combo
+        points += gain
+        score += gain
+        var hit_map := {}
+        for idx in hits:
+            hit_map[idx] = true
+            if objective_type == "collect" and board[idx] == target_glyph:
+                collected += 1
+            if sparkles.size() < 150:
+                _emit_fx(idx, GEM_COLORS[board[idx]])
+        _start_fall_animation(hit_map)
+        for idx in hits:
+            board[idx] = QuestRules.EMPTY
+        QuestRules.settle(board)
+        if mode == "arcade":
+            # The refill mechanic is exclusive to Arcade.
+            for col in range(COLS):
+                for row in range(ROWS):
+                    var idx := row * COLS + col
+                    if board[idx] == QuestRules.EMPTY:
+                        board[idx] = randi_range(0, 5)
+    if total > 0:
+        status_message = ("%s COMBO!  " % combo if combo > 1 else "") + "+%s POINTS" % points
+        popups.append({"text": "+%s" % points, "life": 1.0, "pos": Vector2(360, 720)})
+        _play_sound("match")
+        _vibrate(22)
+        save.data["lifetime_matches"] = int(save.data.get("lifetime_matches", 0)) + total
+
+func _start_fall_animation(hits: Dictionary) -> void:
+    if save.pref("reduce_motion"):
+        return
+    # Animate surviving gems falling into their final sockets.
+    fall_ghosts.clear()
+    for col in range(COLS):
+        var bottom := ROWS - 1
+        while bottom >= 0:
+            if board[bottom * COLS + col] == QuestRules.WALL:
+                bottom -= 1
+                continue
+            var top := bottom
+            while top >= 0 and board[top * COLS + col] != QuestRules.WALL:
+                top -= 1
+            var active: Array[int] = []
+            for row in range(top + 1, bottom + 1):
+                var idx := row * COLS + col
+                if board[idx] >= 0 and not hits.has(idx):
+                    active.append(row)
+            for k in range(active.size()):
+                var from_row := active[k]
+                var to_row := bottom - active.size() + k + 1
+                if from_row != to_row:
+                    fall_ghosts.append({
+                        "from": Vector2(col, from_row),
+                        "to": Vector2(col, to_row),
+                        "value": board[from_row * COLS + col],
+                        "target": to_row * COLS + col
+                    })
+            bottom = top - 1
+    fall_age = 0.0 if not fall_ghosts.is_empty() else 1.0
+
+func _hammer(idx: int) -> void:
+    if state != "playing" or hammers_left <= 0 or idx < 0 or board[idx] < 0:
+        status_message = "Select a real gem to break."
+        return
+    _push_undo()
+    hammers_left -= 1
+    if board[idx] == target_glyph and objective_type == "collect":
+        collected += 1
+    var old_color := board[idx]
+    _emit_fx(idx, GEM_COLORS[old_color])
+    board[idx] = QuestRules.EMPTY
+    score += 75
+    QuestRules.settle(board)
+    if mode == "arcade":
+        for row in range(ROWS):
+            for col in range(COLS):
+                var cell := row * COLS + col
+                if board[cell] == QuestRules.EMPTY:
+                    board[cell] = randi_range(0, 5)
+    _resolve()
+    status_message = "HAMMER SMASH! +75"
+    _finish_or_save()
+    queue_redraw()
+
+func _shuffle() -> void:
+    if state != "playing" or shuffles_left <= 0:
+        status_message = "No shuffles remaining."
+        return
+    var positions: Array[int] = []
+    var colors: Array[int] = []
+    for idx in range(board.size()):
+        if board[idx] >= 0:
+            positions.append(idx)
+            colors.append(board[idx])
+    if positions.size() < 3:
+        status_message = "Not enough gems to shuffle."
+        return
+    var original: Array[int] = board.duplicate()
+    var new_board: Array[int] = original.duplicate()
+    var found := false
+    for attempt in range(120):
+        colors.shuffle()
+        for i in range(positions.size()):
+            new_board[positions[i]] = colors[i]
+        if QuestRules.scan(new_board).is_empty() and not QuestRules.legal_moves(new_board).is_empty():
+            found = true
+            break
+    if not found:
+        status_message = "No safe shuffle found. Charge was not used."
+        return
+    _push_undo()
+    board = new_board
+    shuffles_left -= 1
+    selected = -1
+    hint_cells.clear()
+    status_message = "Remaining gems rearranged. No new gems added!"
+    _save_current()
+    _reset_idle()
+    queue_redraw()
+
+func _show_hint() -> void:
+    hint_cells = _find_hint()
+    hint_until = Time.get_ticks_msec() + 2400
+    status_message = "Swap the glowing gems!" if hint_cells.size() == 2 else "No matching moves remain."
+    _reset_idle()
+
+func _reset_idle() -> void:
+    next_auto_hint_at = Time.get_ticks_msec() + 11000
+
+func _finish_or_save() -> void:
+    if mode == "quest":
+        var left := QuestRules.remaining(board)
+        var cleared := start_gems - left
+        if left == 0 or _find_hint().is_empty():
+            var percent := float(cleared) / float(maxi(1, start_gems))
+            earned_stars = 3 if left == 0 else (2 if percent >= 0.85 else (1 if percent >= 0.65 else 0))
+            if earned_stars > 0:
+                state = "victory"
+                status_message = "PERFECT CLEAR!" if left == 0 else "BOARD COMPLETE!"
+                save.record_victory(world_index, level, score, earned_stars)
+                _play_sound("win")
+                _vibrate(70)
+            else:
+                state = "failure"
+                status_message = "No legal matches remain."
+                save.clear_current()
+                _play_sound("fail")
+        else:
+            _save_current()
+        return
+    var won := collected >= target_amount if objective_type == "collect" else score >= score_target
+    if won:
+        earned_stars = 1 + (1 if moves_left >= 5 else 0) + (1 if score >= score_target * 1.2 else 0)
+        state = "victory"
+        save.data["arcade_best"] = maxi(int(save.data.get("arcade_best", 0)), score)
+        save.clear_current()
+        _play_sound("win")
+        _vibrate(70)
+    elif moves_left <= 0:
+        state = "failure"
+        save.clear_current()
+        _play_sound("fail")
+    else:
+        if _find_hint().is_empty():
+            _create_board()
+            status_message = "Arcade board refreshed."
+        _save_current()

@@ -50,7 +50,7 @@ jobs:
       - name: Gameplay smoke test
         run: |
           timeout 50s godot --headless --path . --script res://tests/smoke.gd 2>&1 | tee build/smoke.log
-          grep -q "PASS: 8x8 match-three" build/smoke.log
+          grep -q "PASS: V0.4 FINITE QUEST" build/smoke.log
           if grep -E "SCRIPT ERROR|SMOKE FAIL" build/smoke.log; then exit 1; fi
 
       - name: Capture actual Godot screens for visual QA
@@ -61,12 +61,14 @@ jobs:
           test -s build/visual/runes.png
           test -s build/visual/settings.png
           test -s build/visual/victory.png
+          test -s build/visual/arcade.png
+          test -s build/visual/paused.png
 
       - name: Upload visual QA screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Kady-Glyph-Quest-Visual-v0.3.0
+          name: Kady-Glyph-Quest-Visual-v0.4.0
           path: build/visual/*.png
           if-no-files-found: ignore
           retention-days: 30
@@ -93,12 +95,12 @@ jobs:
           GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
         run: |
           cp "$RUNNER_TEMP/kady-debug.keystore" /tmp/kady-debug.keystore
-          godot --headless --path . --export-debug "Android" build/kadys-glyph-quest-v0.3.0-debug.apk
-          test -s build/kadys-glyph-quest-v0.3.0-debug.apk
+          godot --headless --path . --export-debug "Android" build/kadys-glyph-quest-v0.4.0-debug.apk
+          test -s build/kadys-glyph-quest-v0.4.0-debug.apk
 
       - name: Add legacy and modern APK signatures
         run: |
-          APK="build/kadys-glyph-quest-v0.3.0-debug.apk"
+          APK="build/kadys-glyph-quest-v0.4.0-debug.apk"
           "$ANDROID_HOME/build-tools/35.0.1/apksigner" sign \
             --ks "$RUNNER_TEMP/kady-debug.keystore" \
             --ks-key-alias androiddebugkey \
@@ -111,7 +113,7 @@ jobs:
 
       - name: Verify APK signatures and Android metadata
         run: |
-          APK="build/kadys-glyph-quest-v0.3.0-debug.apk"
+          APK="build/kadys-glyph-quest-v0.4.0-debug.apk"
           "$ANDROID_HOME/build-tools/35.0.1/apksigner" verify --verbose --print-certs "$APK" | tee build/signatures.txt
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' build/signatures.txt
           grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' build/signatures.txt
@@ -142,13 +144,13 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: |
-            adb install --no-incremental build/kadys-glyph-quest-v0.3.0-debug.apk
+            adb install --no-incremental build/kadys-glyph-quest-v0.4.0-debug.apk
             adb shell pm path com.nefariousmedia.kadysglyphquest
 
       - name: Make APK available to testers
         uses: actions/upload-artifact@v4
         with:
-          name: Kady-Glyph-Quest-Android-v0.3.0
-          path: build/kadys-glyph-quest-v0.3.0-debug.apk
+          name: Kady-Glyph-Quest-Android-v0.4.0
+          path: build/kadys-glyph-quest-v0.4.0-debug.apk
           if-no-files-found: error
           retention-days: 30
