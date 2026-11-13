@@ -68,7 +68,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Kady-Glyph-Quest-Visual-v0.4.0
+          name: Kady-Glyph-Quest-Visual-v0.4.0-Preview
           path: build/visual/*.png
           if-no-files-found: ignore
           retention-days: 30
@@ -95,12 +95,12 @@ jobs:
           GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
         run: |
           cp "$RUNNER_TEMP/kady-debug.keystore" /tmp/kady-debug.keystore
-          godot --headless --path . --export-debug "Android" build/kadys-glyph-quest-v0.4.0-debug.apk
-          test -s build/kadys-glyph-quest-v0.4.0-debug.apk
+          godot --headless --path . --export-debug "Android" build/kadys-glyph-quest-v0.4.0-preview.apk
+          test -s build/kadys-glyph-quest-v0.4.0-preview.apk
 
       - name: Add legacy and modern APK signatures
         run: |
-          APK="build/kadys-glyph-quest-v0.4.0-debug.apk"
+          APK="build/kadys-glyph-quest-v0.4.0-preview.apk"
           "$ANDROID_HOME/build-tools/35.0.1/apksigner" sign \
             --ks "$RUNNER_TEMP/kady-debug.keystore" \
             --ks-key-alias androiddebugkey \
@@ -113,7 +113,7 @@ jobs:
 
       - name: Verify APK signatures and Android metadata
         run: |
-          APK="build/kadys-glyph-quest-v0.4.0-debug.apk"
+          APK="build/kadys-glyph-quest-v0.4.0-preview.apk"
           "$ANDROID_HOME/build-tools/35.0.1/apksigner" verify --verbose --print-certs "$APK" | tee build/signatures.txt
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' build/signatures.txt
           grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' build/signatures.txt
@@ -144,13 +144,13 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: |
-            adb install --no-incremental build/kadys-glyph-quest-v0.4.0-debug.apk
-            adb shell pm path com.nefariousmedia.kadysglyphquest
+            adb install --no-incremental build/kadys-glyph-quest-v0.4.0-preview.apk
+            adb shell pm path com.nefariousmedia.glyphquest.v04preview
 
       - name: Make APK available to testers
         uses: actions/upload-artifact@v4
         with:
-          name: Kady-Glyph-Quest-Android-v0.4.0
-          path: build/kadys-glyph-quest-v0.4.0-debug.apk
+          name: Kady-Glyph-Quest-Android-v0.4.0-Preview
+          path: build/kadys-glyph-quest-v0.4.0-preview.apk
           if-no-files-found: error
           retention-days: 30
