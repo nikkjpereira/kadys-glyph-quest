@@ -55,13 +55,12 @@ func _run() -> void:
         # Complete known scripted path: bottom gadget clears one full row at
         # a time. No refills, no reliance on paid boosters, no dead-end.
         var scene: Dictionary = QuestRules.generate(world,1)
-        var shift: int = int(scene["shift"])
-        var rows: int = int(scene["rows"])
-        for _r in range(rows):
+        var groups: int = int(scene["groups"])
+        for group_index in range(groups):
             if game.state != "playing":
                 _fail("Scripted solution ended before board empty",world,1);return
-            var i := (QuestRules.ROWS - 1) * QuestRules.COLS + shift + 2
-            game._attempt_swap(i,i+1)
+            var pair: Vector2i = QuestRules.solution_pair(scene, group_index)
+            game._attempt_swap(pair.x, pair.y)
         if game.state != "victory" or QuestRules.remaining(game.board) != 0:
             _fail("Quest did not finish on empty board",world,1);return
         if game.earned_stars != 3 or game.save.unlocked_level(world) < 2:
@@ -95,6 +94,34 @@ func _run() -> void:
     game._hammer(all_positions[0])
     if QuestRules.remaining(game.board) >= count_before:
         _fail("Hammer refilled the finite board");return
+    # A stalemate ends the round and awards partial stars, never prematurely.
+    game.mode = "quest"
+    game._start_level(0,1)
+    var gems_left: Array[int] = []
+    for i in range(64):
+        if game.board[i] >= 0:
+            gems_left.append(i)
+    for i in range(gems_left.size()):
+        game.board[gems_left[i]] = QuestRules.EMPTY if i >= 3 else i
+    game._finish_or_save()
+    if game.state != "victory" or game.earned_stars != 2:
+        _fail("No-moves partial clear did not award two stars");return
+    game._start_level(0,1)
+    var sparse: Array[int] = []
+    for i in range(64):
+        if game.board[i] >= 0:
+            sparse.append(i)
+    for i in range(sparse.size()):
+        game.board[sparse[i]] = QuestRules.EMPTY if i >= 3 else i
+    game.start_gems = 3
+    game._finish_or_save()
+    if game.state != "failure":
+        _fail("Low-clear-rate stalemate was not a loss");return
+    game._start_level(0,1)
+    var count_start := QuestRules.remaining(game.board)
+    game._shuffle()
+    if QuestRules.remaining(game.board) != count_start:
+        _fail("Quest shuffle added or removed gems");return
     game.mode = "arcade"
     game._start_level(0,1)
     if QuestRules.remaining(game.board) != 64:

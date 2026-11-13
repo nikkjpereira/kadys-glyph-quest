@@ -1,0 +1,19 @@
+static func certified_solution(world: int, level: int) -> bool:
+    # A constructive proof, exercised for every world and level in CI.
+    var level_data := generate(world, level)
+    var tiles: Array[int] = level_data["board"]
+    if not scan(tiles).is_empty():
+        return false
+    for index in range(int(level_data["groups"])):
+        var pair := solution_pair(level_data, index)
+        if tiles[pair.x] < 0 or tiles[pair.y] < 0:
+            return false
+        var tile := tiles[pair.x]
+        tiles[pair.x] = tiles[pair.y]
+        tiles[pair.y] = tile
+        if scan(tiles).is_empty():
+            return false
+        if resolve(tiles) < 6:
+            return false
+    return remaining(tiles) == 0
+

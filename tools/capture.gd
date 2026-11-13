@@ -44,11 +44,9 @@ func _capture() -> void:
     game.mode = "quest"
     game._start_level(0, 1)
     var scene: Dictionary = QuestRules.generate(0, 1)
-    var shift := int(scene["shift"])
-    var rows := int(scene["rows"])
-    for i in range(rows):
-        var first := 7 * 8 + shift + 2
-        game._attempt_swap(first, first + 1)
+    for i in range(int(scene["groups"])):
+        var pair := QuestRules.solution_pair(scene, i)
+        game._attempt_swap(pair.x, pair.y)
     if game.state != "victory":
         push_error("Visual test could not reach a proper victory")
         quit(1)

@@ -1,0 +1,61 @@
+static func generate(world: int, level: int) -> Dictionary:
+    var rng := RandomNumberGenerator.new()
+    rng.seed = int(190273 + (world + 1) * 7817 + level * 13499)
+    var colors: Array[int] = [0, 1, 2, 3, 4, 5]
+    for i in range(colors.size() - 1, 0, -1):
+        var j := rng.randi_range(0, i)
+        var value := colors[i]
+        colors[i] = colors[j]
+        colors[j] = value
+    var horizontal := (world + level) % 2 == 1
+    var shift := posmod(world + level, 3)
+    var groups := mini(8, 6 + int((level - 1) / 4))
+    var start_col := int((COLS - groups) / 2)
+    var tiles: Array[int] = []
+    tiles.resize(ROWS * COLS)
+    tiles.fill(EMPTY)
+    if horizontal:
+        for row in range(ROWS):
+            for col in range(COLS):
+                if col < shift or col >= shift + TILE_COUNT:
+                    tiles[row * COLS + col] = WALL
+        for row in range(ROWS - groups, ROWS):
+            var pair_id := row % 3
+            var a := colors[pair_id * 2]
+            var b := colors[pair_id * 2 + 1]
+            var inverted := (row + level + world) % 2 == 0
+            for x in range(TILE_COUNT):
+                var code: int = int(ROW_GADGET[x])
+                if inverted:
+                    code = 1 - code
+                tiles[row * COLS + shift + x] = a if code == 0 else b
+    else:
+        for row in range(ROWS):
+            if row < shift or row >= shift + TILE_COUNT:
+                for col in range(COLS):
+                    tiles[row * COLS + col] = WALL
+        for col in range(start_col, start_col + groups):
+            var pair_id := col % 3
+            var a := colors[pair_id * 2]
+            var b := colors[pair_id * 2 + 1]
+            var inverted := (col + level + world) % 2 == 0
+            for y in range(TILE_COUNT):
+                var code: int = int(ROW_GADGET[y])
+                if inverted:
+                    code = 1 - code
+                tiles[(shift + y) * COLS + col] = a if code == 0 else b
+    return {
+        "board": tiles, "shift": shift, "groups": groups, "start_col": start_col,
+        "orientation": "rows" if horizontal else "columns", "gem_count": groups * TILE_COUNT,
+        "seed": rng.seed
+    }
+
+static func solution_pair(level_data: Dictionary, group: int) -> Vector2i:
+    var shift := int(level_data["shift"])
+    if str(level_data["orientation"]) == "rows":
+        var a := (ROWS - 1) * COLS + shift + 2
+        return Vector2i(a, a + 1)
+    var col := int(level_data["start_col"]) + group
+    var a := (shift + 2) * COLS + col
+    return Vector2i(a, a + COLS)
+

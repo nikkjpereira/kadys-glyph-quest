@@ -23,8 +23,8 @@ func _draw_menu() -> void:
     for i in range(4):
         var xx := 51 + (i % 2) * 314
         var yy := 829 + int(i / 2) * 112
-        _tex("world_%d" % i, Rect2(xx + 5, yy + 5, 100, 84))
-        _panel(Rect2(xx, yy, 300, 95), Color("#3d255a") if world_index == i else Color("#2b1b44"), false, 0.12)
+        _panel(Rect2(xx, yy, 300, 95), Color("#3d255a") if world_index == i else Color("#2b1b44"), false, 0.94)
+        _tex("world_%d" % i, Rect2(xx + 16, yy + 12, 85, 71))
         _label(WORLD_SHORT[i], xx + 199, yy + 41, 21, GOLD if world_index == i else CREAM, true)
         _label("LEVEL %s / %s" % [save.unlocked_level(i), LEVEL_COUNT], xx + 199, yy + 70, 17, MUTED, true)
     _button(Rect2(53, 1081, 613, 68), "CHOOSE A LEVEL", false, 25)

@@ -1,9 +1,9 @@
 extends RefCounted
 ## Finite, no-refill puzzle rules for Quest Mode.
 ## -1 means empty socket, -2 means an immovable stone wall.
-## The row-gadget construction is intentionally solvable, not random luck:
+## The row/column gadget construction is intentionally solvable, not random luck:
 ## each full row is a scrambled (AAA BBB) pair. Exchanging its middle two
-## cells clears exactly six gems. Clearing complete rows bottom-up always wins.
+## cells clears exactly six gems. Clearing complete rows or columns along the certified path always wins.
 const ROWS := 8
 const COLS := 8
 const EMPTY := -1
@@ -20,26 +20,57 @@ static func generate(world: int, level: int) -> Dictionary:
         var value := colors[i]
         colors[i] = colors[j]
         colors[j] = value
+    var horizontal := (world + level) % 2 == 1
     var shift := posmod(world + level, 3)
-    var active_rows := mini(8, 6 + int((level - 1) / 4))
+    var groups := mini(8, 6 + int((level - 1) / 4))
+    var start_col := int((COLS - groups) / 2)
     var tiles: Array[int] = []
-    tiles.resize(64)
+    tiles.resize(ROWS * COLS)
     tiles.fill(EMPTY)
-    for row in range(ROWS):
-        for col in range(COLS):
-            if col < shift or col >= shift + TILE_COUNT:
-                tiles[row * COLS + col] = WALL
-    for row in range(ROWS - active_rows, ROWS):
-        var pair_id := row % 3
-        var a := colors[pair_id * 2]
-        var b := colors[pair_id * 2 + 1]
-        var inverted := (row + level + world) % 2 == 0
-        for x in range(TILE_COUNT):
-            var code: int = int(ROW_GADGET[x])
-            if inverted:
-                code = 1 - code
-            tiles[row * COLS + shift + x] = a if code == 0 else b
-    return {"board": tiles, "shift": shift, "rows": active_rows, "gem_count": active_rows * TILE_COUNT, "seed": rng.seed}
+    if horizontal:
+        for row in range(ROWS):
+            for col in range(COLS):
+                if col < shift or col >= shift + TILE_COUNT:
+                    tiles[row * COLS + col] = WALL
+        for row in range(ROWS - groups, ROWS):
+            var pair_id := row % 3
+            var a := colors[pair_id * 2]
+            var b := colors[pair_id * 2 + 1]
+            var inverted := (row + level + world) % 2 == 0
+            for x in range(TILE_COUNT):
+                var code: int = int(ROW_GADGET[x])
+                if inverted:
+                    code = 1 - code
+                tiles[row * COLS + shift + x] = a if code == 0 else b
+    else:
+        for row in range(ROWS):
+            if row < shift or row >= shift + TILE_COUNT:
+                for col in range(COLS):
+                    tiles[row * COLS + col] = WALL
+        for col in range(start_col, start_col + groups):
+            var pair_id := col % 3
+            var a := colors[pair_id * 2]
+            var b := colors[pair_id * 2 + 1]
+            var inverted := (col + level + world) % 2 == 0
+            for y in range(TILE_COUNT):
+                var code: int = int(ROW_GADGET[y])
+                if inverted:
+                    code = 1 - code
+                tiles[(shift + y) * COLS + col] = a if code == 0 else b
+    return {
+        "board": tiles, "shift": shift, "groups": groups, "start_col": start_col,
+        "orientation": "rows" if horizontal else "columns", "gem_count": groups * TILE_COUNT,
+        "seed": rng.seed
+    }
+
+static func solution_pair(level_data: Dictionary, group: int) -> Vector2i:
+    var shift := int(level_data["shift"])
+    if str(level_data["orientation"]) == "rows":
+        var a := (ROWS - 1) * COLS + shift + 2
+        return Vector2i(a, a + 1)
+    var col := int(level_data["start_col"]) + group
+    var a := (shift + 2) * COLS + col
+    return Vector2i(a, a + COLS)
 
 static func remaining(tiles: Array[int]) -> int:
     var result := 0
@@ -126,21 +157,18 @@ static func legal_moves(tiles: Array[int]) -> Array[Vector2i]:
     return found
 
 static func certified_solution(world: int, level: int) -> bool:
-    # A constructive proof, exercised for every world/level in CI.
+    # A constructive proof, exercised for every world and level in CI.
     var level_data := generate(world, level)
     var tiles: Array[int] = level_data["board"]
     if not scan(tiles).is_empty():
         return false
-    var shift := int(level_data["shift"])
-    var rows := int(level_data["rows"])
-    for row in range(rows):
-        var a := (ROWS - 1) * COLS + shift + 2
-        var b := a + 1
-        if tiles[a] < 0 or tiles[b] < 0:
+    for index in range(int(level_data["groups"])):
+        var pair := solution_pair(level_data, index)
+        if tiles[pair.x] < 0 or tiles[pair.y] < 0:
             return false
-        var t := tiles[a]
-        tiles[a] = tiles[b]
-        tiles[b] = t
+        var tile := tiles[pair.x]
+        tiles[pair.x] = tiles[pair.y]
+        tiles[pair.y] = tile
         if scan(tiles).is_empty():
             return false
         if resolve(tiles) < 6:
