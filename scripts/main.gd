@@ -325,8 +325,8 @@ func _draw_menu() -> void:
     _button(Rect2(85, 583, 252, 61), "QUEST", mode == "quest", 22)
     _button(Rect2(374, 583, 252, 61), "ARCADE", mode == "arcade", 22)
     var current: Dictionary = save.data.get("current", {})
-    var same_mode := current.get("mode", "") == mode
-    var same_world := int(current.get("world", -1)) == world_index
+    var same_mode: bool = str(current.get("mode", "")) == mode
+    var same_world: bool = int(current.get("world", -1)) == world_index
     var button_label := "CONTINUE GAME" if same_mode and same_world else ("BEGIN QUEST" if mode == "quest" else "PLAY ARCADE")
     _button(Rect2(54, 673, 612, 84), button_label, true, 32)
     _fancy("CHOOSE YOUR WORLD", 360, 801, 27)
