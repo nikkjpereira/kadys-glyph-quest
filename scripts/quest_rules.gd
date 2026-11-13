@@ -35,7 +35,7 @@ static func generate(world: int, level: int) -> Dictionary:
         var b := colors[pair_id * 2 + 1]
         var inverted := (row + level + world) % 2 == 0
         for x in range(TILE_COUNT):
-            var code := ROW_GADGET[x]
+            var code: int = int(ROW_GADGET[x])
             if inverted:
                 code = 1 - code
             tiles[row * COLS + shift + x] = a if code == 0 else b
