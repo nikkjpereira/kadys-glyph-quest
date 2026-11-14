@@ -133,6 +133,7 @@ func _ready() -> void:
     art["cracked"] = load("res://assets/v05/cracked.png") as Texture2D
     art["lock"] = load("res://assets/v05/lock.png") as Texture2D
     art["booster_plate"] = load("res://assets/v05/booster_plate.png") as Texture2D
+    art["magic_glow"] = load("res://assets/v05/magic_glow.png") as Texture2D
     for i in range(4):
         art["world_%d" % i] = load("res://assets/v03/world_%d.png" % i) as Texture2D
     for i in range(3):
@@ -457,7 +458,7 @@ func _draw_game() -> void:
     _fancy(str(score), 105, 245, 35)
     _label("MOVES", 580, 198, 15, GOLD, true)
     _fancy(str(moves_used) if mode=="quest" else str(moves_left), 580, 245, 32)
-    _label("LEVEL %s  •  %s" % [level, WORLD_TAGLINES[world_index]] if mode=="quest" else "ARCADE  •  %s" % WORLD_SHORT[world_index], 356, 232, 18, INK, true, display_font)
+    _label("LEVEL %s  •  %s" % [level, WORLD_SHORT[world_index]] if mode=="quest" else "ARCADE  •  %s" % WORLD_SHORT[world_index], 356, 232, 18, INK, true, display_font)
     # Compact parchment goal HUD with gem progress and fewer nested boxes.
     _tex("parchment", Rect2(42, 287, 636, 107))
     var amount := 0
@@ -531,6 +532,7 @@ func _draw_fx() -> void:
         var t:=clampf(float(burst["life"])/.72,0.0,1.0)
         var color: Color=burst["color"]
         var radius:=26.0+(1.0-t)*58.0
+        _tex("magic_glow",Rect2(p-Vector2(86,86),Vector2(172,172)),Color(1,1,1,t*.96))
         draw_circle(p,50*t,Color(color.r,color.g,color.b,.11*t))
         draw_arc(p,radius,0,TAU,48,Color(.97,.79,1,.63*t),3.5,true)
         draw_arc(p,radius*.72,0,TAU,48,Color(.61,.32,1,.45*t),3,true)
@@ -561,9 +563,9 @@ func _draw_fx() -> void:
         var pos: Vector2=p["pos"]
         var yy:=pos.y+(1.0-t)*(-58.0)
         var text_value:=str(p["text"])
-        var font_size:=34 if not text_value.begins_with("COMBO") else 25
+        var font_size:=39 if not text_value.begins_with("COMBO") else 30
         _label(text_value,pos.x+2,yy+3,font_size,Color(.18,.03,.24,t),true,display_font)
-        _label(text_value,pos.x,yy,font_size,Color(1,.77,.35,t),true,display_font)
+        _label(text_value,pos.x,yy,font_size,Color(1,.86,.57,t),true,display_font)
 
 func _modal(dim: float = 0.77) -> void:
     draw_rect(Rect2(0,0,720,1440),Color(0.02,0.01,0.06,dim))

@@ -89,3 +89,24 @@ if __name__=="__main__":
     logo();board_frame();locked();cracked();booster_plate()
     for f in ROOT.glob("*.png"):
         print(f.name,f.stat().st_size)
+
+def magic_glow():
+    # White-hot core, violet rim, transparent feathered falloff for match bursts.
+    im=Image.new("RGBA",(256,256))
+    px=im.load()
+    for y in range(256):
+        for x in range(256):
+            r=((x-127.5)**2+(y-127.5)**2)**.5/128.0
+            if r>=1.0:continue
+            if r<.19:
+                color=(255,244,255);alpha=int(205*(1-r/.19)+88)
+            elif r<.47:
+                k=(r-.19)/.28
+                color=(224,128,255);alpha=int(125*(1-k)+55)
+            else:
+                k=(r-.47)/.53
+                color=(156,53,247);alpha=int(66*(1-k)**2)
+            px[x,y]=(*color,min(255,alpha))
+    im.save(ROOT/"magic_glow.png",optimize=True)
+
+magic_glow()
