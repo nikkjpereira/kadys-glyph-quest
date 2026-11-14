@@ -546,6 +546,11 @@ func _draw_fx() -> void:
         var t:=clampf(float(burst["life"])/.72,0.0,1.0)
         var color: Color=burst["color"]
         var radius:=26.0+(1.0-t)*58.0
+        # Hold the matched gem momentarily in a purple-white flash before it pops.
+        if t>.53 and burst.has("tile"):
+            var old_rect:=Rect2(p-Vector2(CELL*.5,CELL*.5),Vector2(CELL-2,CELL-2))
+            _draw_live_gem(old_rect,int(burst["tile"]),int(burst["index"]))
+            _rect(old_rect.grow(-8),Color(.99,.63,1.0,(t-.53)*.34),11)
         _tex("magic_glow",Rect2(p-Vector2(86,86),Vector2(172,172)),Color(1,1,1,t*.96))
         draw_circle(p,50*t,Color(color.r,color.g,color.b,.11*t))
         draw_arc(p,radius,0,TAU,48,Color(.97,.79,1,.63*t),3.5,true)
@@ -1107,7 +1112,7 @@ func _resolve() -> void:
             if sparkles.size() < 350:
                 _emit_fx(idx, GEM_COLORS[board[idx]])
             if impact_fx.size()<96:
-                impact_fx.append({"pos":ORIGIN+Vector2((idx%COLS)*CELL+CELL*.5,int(idx/COLS)*CELL+CELL*.5),"life":.72,"color":GEM_COLORS[board[idx]]})
+                impact_fx.append({"pos":ORIGIN+Vector2((idx%COLS)*CELL+CELL*.5,int(idx/COLS)*CELL+CELL*.5),"life":.72,"color":GEM_COLORS[board[idx]],"tile":board[idx],"index":idx})
         var result: Dictionary = QuestRules.adjacent_obstacles(board,locks,hits)
         for cracked in result["cracked"]:
             _emit_fx(int(cracked),GOLD)
