@@ -1,70 +1,30 @@
-# Kady's Glyph Quest
+# Kady's Glyph Quest v0.5.0 — Gemstorm Edition
 
-**v0.4.0 — Finite Quest + Arcade, UI Rebuild**
+**Android prerelease, Godot 4.7.2.** The public title remains provisional. Ads and in-app purchases remain disabled.
 
-Offline Android puzzle game, Godot 4.7.2, GDScript. The consumer-facing name is provisional.
+## What's new
 
-## What changed in v0.4.0
+- 48 finite puzzles with constructive, booster-free clearing solutions of 9–19 moves. These are *certified solution paths*, not proven shortest solutions.
+- Sparse blockers, cracked stones that break near matches, and locked gems that release on neighboring matches.
+- No automatic gem replenishment in Quest Mode. All gems must be cleared to win; an exhausted board with remaining gems is a failed round. Move efficiency and booster use determine stars.
+- Refined HUD inspired by the original screenshot: illustrated logo, tighter status panels, parchment objectives, a thinner blue-stone board frame, and blue-and-gold booster buttons.
+- Purple match glows, expanding rings, golden sparkle trails, animated combo-point popups, falling gems, cracking stones, and unlocking effects. The Reduce Motion setting remains supported.
+- Five original loopable instrumental themes: Menu, Runes, Egypt, East Asia, and Mixed, with transitions and independent volume settings.
+- Existing completed levels and settings are preserved where possible, but old in-progress layouts must be restarted under the new puzzle rules.
 
-**Quest Mode (the default)** now uses finite, non-replenishing boards. Matching 3+ identical glyphs removes them; the gems above fall down, and *no new gems spawn*. The round ends only when the board is empty or no legal swaps remain. Clear 100% for 3 stars; clear >=85% for 2 stars, >=65% for 1 star. A round below 65% is a loss and offers retry. There is no arbitrary Quest Mode move limit.
+## Test release
 
-Puzzle generation is deterministic per world+level. The current level generator creates 6-gem row gadgets whose intended sequence is mathematically solvable. A known clearing path is verified for all 48 levels by CI, so every level can be cleared without ads or payments. The stone barriers at the sides prevent moving into those cells. Additional puzzle types and difficulty ramps are future work.
+**Publish standalone debug APKs only, no ZIP.** The side-by-side preview uses a separate Android package ID, allowing testing without uninstalling an earlier version. Saves are independent. The standard application may not update earlier debug builds because the temporary signing certificate changes between builds.
 
-**Arcade Mode** remains selectable from the main menu. It preserves the v0.3 refill-based match-3 score/collect gameplay with limited moves.
+Automated QA checks all 48 puzzle clearing paths, no-refill behavior, obstacles, Undo, Arcade Mode, saved settings, Android signing, and emulator installation. It also captures screenshots from the actual Godot game. Hardware installation, gameplay feel and audio playback still require testing.
 
-**Navigation / visual fixes:**
-- Home icon on the top-left saves the current run and returns immediately.
-- Small Pause icon on top-right opens Resume / Settings / Save & Home.
-- Board rim now renders behind the gems with added margins; none should be clipped.
-- Four clearly labeled boosters (Hint, Shuffle, Hammer, Undo) with charge counts.
-- Stone walls and empty sockets have distinct visuals. Different worlds apply subtle gem tints.
-- Gravity movement overlays, match sparkle effects, combo scoring.
-- World card selection, level selection, achievements/progress screen and audio settings preserved.
+## Source files
 
-**Boosters:**
-- Hint highlights a legal swap and costs a charge.
-- Shuffle rearranges *only existing gems*, preserving wall/empty positions; it does not add gems. It does not spend a charge if no playable shuffle can be found.
-- Hammer removes one selected gem (no replacements in Quest).
-- Undo reverts a move, plus score and booster balances, and costs one Undo charge. A short undo history is autosaved.
+- `scripts/quest_rules.gd`: puzzle physics, locks, cracked obstacles, and solution verification.
+- `data/levels_v05.json` and `tools/make_levels_v05.py`: 48 deterministic levels and known full-clearing paths.
+- `scripts/main.gd`: gameplay, HUD, effects, input, and music transitions.
+- `assets/v05/` and `tools/make_art_v05.py`: artwork and asset generator.
+- `assets/audio/worlds/` and `tools/make_world_audio_v05.py`: world music and procedural composition script.
+- `tests/smoke.gd`: automated gameplay regression checks.
 
-**Saving:** Settings, stars and unlocked levels from prior versions continue to load (same schema). The v0.3 in-progress *refill-mode board* is not reopened as a finite Quest board: on the first v0.4 continue attempt the incompatible board is discarded while completed levels and stars remain. The v0.4 preview package has a separate app ID and therefore separate saved progress by Android design.
-
-**Sound:** Retains the v0.3 looping fantasy instrumental, sound effects, volume sliders, and accessibility settings.
-
-## Testing
-
-1. GitHub Actions imports the project and checks script syntax.
-2. Smoke tests check all 48 curated quest layouts, proof of complete clearing, no refill, undo, no premature victory, saving, hammer behavior, and preserved Arcade refill gameplay.
-3. Godot captures *actual* menu, Quest, Arcade, Settings, Pause, and Victory screenshots.
-4. The signed APK is checked with Android apksigner/JAR verification and installed into a clean Android 16 emulator.
-5. A verified ZIP with the signed APK and SHA-256 hash is published for hardware sideload testing. ZIP extraction has previously avoided damaged direct APK transfers.
-
-**Important signing caveat:** v0.3 debug APKs and v0.4 debug builds are signed with different ephemeral test certificates. A v0.4 **side-by-side** preview (distinct package ID) is preferred for first testing, so v0.3 and its local progress are unaffected. Do not uninstall a prior build without backing up its data. Persistent signing is an unresolved pre-production requirement.
-
-## World design
-- Runes: Norse glyphs, enchanted stone room, blue-purple gem lighting.
-- Egypt: hieroglyphs, warm sandstone and gold.
-- East Asia: Han, kana and Hangul samples, jade/teal colors.
-- Mixed: magical archive with a cross-script assortment.
-
-Glyphs are visual motifs, not translations or language-learning claims. The currently available illustrations are intentionally style-guided by the concept render; runtime gameplay, controls, and text are native Godot, not pasted onto an image.
-
-## Monetization plan (not active)
-The source retains `scripts/brand_config.gd` with feature flags for a future store name, opt-in rewarded ads, an ad-removal purchase, and purely optional cosmetics/boosters. No ad SDK, payment processing, trackers, or network permissions are present in test builds. Complete store billing verification and youth/privacy policy review before enabling anything.
-
-## Build locally
-
-Install Godot 4.7.2 and Python 3 with Pillow.
-
-```bash
-python3 tools/prepare_assets.py
-python3 tools/make_art_v04.py
-godot --editor --path . --import
-godot --path .
-```
-
-The main files are `scripts/main.gd` (UI/game), `scripts/quest_rules.gd` (finite puzzles), `scripts/save_data.gd` (offline save), `assets/v03` and `assets/v04` (art).
-
-### License
-
-Original source and generated icon art: MIT. The fonts included during asset preparation are released under their respective SIL OFL 1.1 licenses; retain those license notices.
+Older implementation history is available in Git history and previous tags.

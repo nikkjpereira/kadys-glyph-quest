@@ -7,8 +7,8 @@ const Brand = preload("res://scripts/brand_config.gd")
 const QuestRules = preload("res://scripts/quest_rules.gd")
 const COLS := 8
 const ROWS := 8
-const CELL := 72.0
-const ORIGIN := Vector2(72, 514)
+const CELL := 82.0
+const ORIGIN := Vector2(32, 429)
 const BASE_SIZE := Vector2(720, 1440)
 const LEVEL_COUNT := 12
 const WORLD_NAMES := ["RUNIC HALL", "TEMPLE OF THE SUN", "JADE GARDENS", "ARCANE ARCHIVE"]
@@ -52,6 +52,15 @@ var fall_ghosts: Array[Dictionary] = []
 var fall_age := 1.0
 var level := 1
 var board: Array[int] = []
+var locks: Array[int] = []
+var reference_moves := 12
+var boosters_used := 0
+var impact_fx: Array[Dictionary] = []
+var impact_flash := 0.0
+var music_alt_player: AudioStreamPlayer
+var world_tracks: Array[AudioStream] = []
+var music_track_id := -1
+
 var score := 0
 var moves_left := 24
 var collected := 0
@@ -119,7 +128,11 @@ func _ready() -> void:
     for item in ["title", "button", "ribbon", "parchment", "medallion", "spark"]:
         var file_name: String = "hud_medallion" if item == "medallion" else ("title_plaque" if item == "title" else ("button_plaque" if item == "button" else ("magic_spark" if item == "spark" else item)))
         art[item] = load("res://assets/v03/" + file_name + ".png") as Texture2D
-    art["board_frame"] = load("res://assets/v03/board_gold_frame.png") as Texture2D
+    art["board_frame"] = load("res://assets/v05/board_frame.png") as Texture2D
+    art["render_logo"] = load("res://assets/v05/logo.png") as Texture2D
+    art["cracked"] = load("res://assets/v05/cracked.png") as Texture2D
+    art["lock"] = load("res://assets/v05/lock.png") as Texture2D
+    art["booster_plate"] = load("res://assets/v05/booster_plate.png") as Texture2D
     for i in range(4):
         art["world_%d" % i] = load("res://assets/v03/world_%d.png" % i) as Texture2D
     for i in range(3):
@@ -133,12 +146,14 @@ func _ready() -> void:
         add_child(player)
         sound_players[item] = player
     music_player = AudioStreamPlayer.new()
-    var ambience := load("res://assets/audio/enchanted_library.ogg")
-    if ambience is AudioStreamOggVorbis:
-        ambience.loop = true
-    music_player.stream = ambience
-    music_player.volume_db = -4
+    music_alt_player = AudioStreamPlayer.new()
     add_child(music_player)
+    add_child(music_alt_player)
+    for track in ["menu", "runes", "egypt", "asia", "mixed"]:
+        var stream: AudioStream = load("res://assets/audio/worlds/" + track + ".ogg")
+        if stream is AudioStreamOggVorbis:
+            (stream as AudioStreamOggVorbis).loop = true
+        world_tracks.append(stream)
     _music_state()
     var active: Dictionary = save.data.get("current", {})
     if active.has("world"):
@@ -152,6 +167,18 @@ func _notification(what: int) -> void:
 
 func _process(delta: float) -> void:
     clock += delta
+    if impact_flash > 0.0:
+        impact_flash = maxf(0.0, impact_flash-delta*2.1)
+        queue_redraw()
+    for i in range(impact_fx.size()-1,-1,-1):
+        var hit: Dictionary = impact_fx[i]
+        hit["life"] = float(hit["life"])-delta
+        if float(hit["life"])<=0:
+            impact_fx.remove_at(i)
+        else:
+            impact_fx[i] = hit
+    if not impact_fx.is_empty():
+        queue_redraw()
     if fall_age < 1.0:
         fall_age += delta
         if fall_age >= 0.35:
@@ -193,10 +220,21 @@ func _scale() -> Vector2:
     var s := get_viewport_rect().size
     if s.x <= 0 or s.y <= 0:
         return Vector2.ONE
-    return Vector2(s.x / BASE_SIZE.x, s.y / BASE_SIZE.y)
+    var uniform := minf(s.x / BASE_SIZE.x, s.y / BASE_SIZE.y)
+    return Vector2(uniform,uniform)
+
+func _offset() -> Vector2:
+    var s := get_viewport_rect().size
+    return (s - BASE_SIZE * _scale()) * 0.5
 
 func _draw() -> void:
-    draw_set_transform(Vector2.ZERO, 0.0, _scale())
+    # Extend illustration into safe-area margins while keeping gem proportions square.
+    var bg: Texture2D = scene_bg
+    if state in ["playing","paused","victory","failure","tutorial"] and backgrounds.size() == 4:
+        bg = backgrounds[world_index]
+    if bg != null:
+        draw_texture_rect(bg,Rect2(Vector2.ZERO,get_viewport_rect().size),false)
+    draw_set_transform(_offset(), 0.0, _scale())
     _background()
     match state:
         "menu":
@@ -304,9 +342,7 @@ func _world_font(world: int) -> Font:
     return [glyph_fonts[0],glyph_fonts[1],glyph_fonts[2],glyph_fonts[0]][world]
 
 func _draw_logo(x: float, y: float, w: float, h: float) -> void:
-    _tex("title", Rect2(x,y,w,h))
-    _fancy(Brand.TITLE_LINE_1,x+w*0.50,y+h*0.47,int(h*0.27))
-    _fancy(Brand.TITLE_LINE_2,x+w*0.50,y+h*0.72,int(h*0.23))
+    _tex("render_logo", Rect2(x,y,w,h))
 
 func _draw_menu() -> void:
     _draw_logo(28, 65, 664, 238)
@@ -340,7 +376,7 @@ func _draw_menu() -> void:
     _button(Rect2(53, 1081, 613, 68), "CHOOSE A LEVEL", false, 25)
     _button(Rect2(52, 1173, 299, 73), "SETTINGS", false, 25)
     _button(Rect2(369, 1173, 299, 73), "PROGRESS", false, 25)
-    _label("FINITE QUEST + CLASSIC ARCADE  •  v0.4.0", 360, 1343, 17, CREAM, true)
+    _label("FINITE QUEST + CLASSIC ARCADE  •  v0.5.0", 360, 1343, 17, CREAM, true)
 
 func _draw_levels() -> void:
     _title("CHOOSE A LEVEL",WORLD_NAMES[world_index])
@@ -411,97 +447,123 @@ func _draw_settings() -> void:
     _label("Ads and purchases are disabled in this test version.",360,1307,17,MUTED,true)
 
 func _draw_game() -> void:
-    _draw_logo(170, 12, 380, 141)
+    _draw_logo(145, 1, 430, 163)
     _draw_nav_icons()
-    _tex("medallion", Rect2(24, 166, 201, 103))
-    _tex("medallion", Rect2(263, 166, 194, 103))
-    _tex("medallion", Rect2(495, 166, 202, 103))
-    _label("SCORE", 126, 195, 17, GOLD, true)
-    _fancy(str(score), 126, 249, 39)
-    _label("LEVEL", 360, 195, 17, GOLD, true)
-    _fancy(str(level) if mode == "quest" else "∞", 360, 249, 38)
-    _label("MOVES" if mode == "quest" else "LEFT", 596, 195, 17, GOLD, true)
-    _fancy(str(moves_used) if mode == "quest" else str(moves_left), 596, 249, 39)
-    _tex("ribbon", Rect2(59, 282, 602, 61))
-    _label("LEVEL %s  •  %s" % [level, WORLD_TAGLINES[world_index]] if mode == "quest" else "ARCADE  •  %s" % WORLD_TAGLINES[world_index], 360, 322, 21, INK, true, display_font)
-    _tex("parchment", Rect2(33, 355, 654, 112))
+    # Reference-style stat badges flank a single parchment level ribbon.
+    _tex("medallion", Rect2(14, 176, 183, 88))
+    _tex("ribbon", Rect2(197, 190, 320, 66))
+    _tex("medallion", Rect2(520, 176, 119, 88))
+    _label("SCORE", 105, 197, 15, GOLD, true)
+    _fancy(str(score), 105, 245, 35)
+    _label("MOVES", 580, 198, 15, GOLD, true)
+    _fancy(str(moves_used) if mode=="quest" else str(moves_left), 580, 245, 32)
+    _label("LEVEL %s  •  %s" % [level, WORLD_TAGLINES[world_index]] if mode=="quest" else "ARCADE  •  %s" % WORLD_SHORT[world_index], 356, 232, 18, INK, true, display_font)
+    # Compact parchment goal HUD with gem progress and fewer nested boxes.
+    _tex("parchment", Rect2(42, 287, 636, 107))
     var amount := 0
     var goal := 0
     if mode == "quest":
-        amount = start_gems - QuestRules.remaining(board)
+        amount = start_gems-QuestRules.remaining(board)
         goal = start_gems
-        _label("CLEAR THE BOARD", 164, 393, 27, INK, false, display_font)
-        _label("%s / %s" % [amount, start_gems], 586, 439, 24, INK, true, display_font)
-        _label("✦", 100, 429, 39, Color("#88531c"), true)
-    elif objective_type == "collect":
-        amount = collected
-        goal = target_amount
-        _label("COLLECT %s GLYPHS" % target_amount, 148, 393, 25, INK, false, display_font)
-        _label("%s / %s" % [mini(amount, goal), goal], 586, 439, 24, INK, true, display_font)
-        _label(SYMBOLS[world_index][target_glyph], 100, 431, 50, INK, true, _glyph_font(target_glyph))
+        _label("CLEAR THE BOARD", 170, 328, 25, INK, false, display_font)
+        _label("%s / %s" % [amount,goal], 592, 375, 22, INK, true, display_font)
+        _label("✦", 101, 366, 41, Color("#8d5d2a"), true)
+    elif objective_type=="collect":
+        amount=collected
+        goal=target_amount
+        _label("COLLECT %s GLYPHS" % target_amount, 168, 328, 23, INK, false, display_font)
+        _label("%s / %s" % [mini(amount,goal),goal],592,375,22,INK,true,display_font)
+        _label(SYMBOLS[world_index][target_glyph],101,367,44,INK,true,_glyph_font(target_glyph))
     else:
-        amount = score
-        goal = score_target
-        _label("REACH %s POINTS" % score_target, 148, 393, 23, INK, false, display_font)
-        _label("%s / %s" % [mini(amount, goal), goal], 586, 439, 23, INK, true, display_font)
-    _rect(Rect2(145, 414, 323, 21), Color("#59475e"), 10)
-    _rect(Rect2(145, 414, maxf(3.0, 323.0 * minf(1.0, float(amount) / maxf(1.0, float(goal)))), 21), Color("#46cfee"), 10)
-    draw_line(Vector2(153, 418), Vector2(462, 418), Color(1, 1, 1, 0.22), 2, true)
-    # FRAME FIRST.  Keep all top-row gems wholly inside its padded opening.
-    _rect(Rect2(31, 473, 659, 655), Color("#0d152e"), 24, Color("#3c628a"), 4)
-    _tex("board_frame", Rect2(19, 471, 682, 664))
+        amount=score
+        goal=score_target
+        _label("REACH %s POINTS" % goal,168,328,23,INK,false,display_font)
+        _label("%s / %s" % [mini(amount,goal),goal],592,375,22,INK,true,display_font)
+    _rect(Rect2(176, 347, 336, 22), Color("#473e4c"), 12)
+    _rect(Rect2(178, 349, maxf(3.0, 332.0*minf(1.0,float(amount)/maxf(1.0,float(goal)))), 18), Color("#40d6f0"), 9)
+    draw_line(Vector2(181,351),Vector2(510,351),Color(1,1,1,.20),2,true)
+    # The rim is behind ALL playable gems; the top row is fully visible.
+    _tex("board_frame", Rect2(15, 402, 690, 707))
     for row in range(ROWS):
         for col in range(COLS):
-            var idx := row * COLS + col
-            var xx := ORIGIN.x + float(col) * CELL
-            var yy := ORIGIN.y + float(row) * CELL
-            var tile := board[idx]
-            var rect := Rect2(xx + 1, yy + 1, CELL - 2, CELL - 2)
-            _rect(rect.grow(-2), Color(0.04, 0.06, 0.16, 0.91), 11, Color("#40547c"), 1)
-            if tile == QuestRules.WALL:
-                _tex("stone", rect)
+            var idx:=row*COLS+col
+            var xx:=ORIGIN.x+float(col)*CELL
+            var yy:=ORIGIN.y+float(row)*CELL
+            var tile:=board[idx]
+            var rect:=Rect2(xx+1,yy+1,CELL-2,CELL-2)
+            _rect(rect.grow(-3),Color(0.02,0.04,0.12,0.90),10,Color("#304e7f"),1)
+            if tile==QuestRules.WALL:
+                _tex("stone",rect)
                 continue
-            if tile == QuestRules.EMPTY:
-                _rect(rect.grow(-12), Color(0.03, 0.04, 0.10, 0.5), 8)
+            if tile==QuestRules.CRACK:
+                _tex("cracked",rect)
+                continue
+            if tile==QuestRules.EMPTY:
+                _rect(rect.grow(-13),Color(0.02,0.04,0.1,0.53),8)
                 continue
             if hint_cells.has(idx):
-                _rect(rect.grow(3), Color("#bcefff"), 12)
-                draw_arc(rect.get_center(), 34, 0, TAU, 38, Color(0.81, 0.97, 1.0, 0.72 + 0.20 * sin(clock * 9)), 3.0, true)
-            elif selected == idx:
-                _rect(rect.grow(3), GOLD, 12)
-            var hidden := false
-            if fall_age < 0.31:
+                _rect(rect.grow(3),Color("#d5fcff"),13)
+                draw_arc(rect.get_center(),37,0,TAU,42,Color(.78,.95,1,.59+.3*sin(clock*9.0)),4,true)
+            elif selected==idx:
+                _rect(rect.grow(3),GOLD,13)
+            var hidden:=false
+            if fall_age<0.31:
                 for ghost in fall_ghosts:
-                    if int(ghost["target"]) == idx:
-                        hidden = true
+                    if int(ghost["target"])==idx:
+                        hidden=true
                         break
             if not hidden:
-                _draw_live_gem(rect, tile, idx)
-    _label(status_message, 360, 1166, 19, CREAM, true)
-    _draw_booster(0, hints_left, "HINT", "booster_0")
-    _draw_booster(1, shuffles_left, "SHUFFLE", "booster_2")
-    _draw_booster(2, hammers_left, "HAMMER", "booster_1")
-    _draw_booster(3, undo_left, "UNDO", "undo")
+                _draw_live_gem(rect,tile,idx)
+            if locks.size()==64 and locks[idx]>0:
+                _tex("lock",rect)
+    _label(status_message,360,1140,19,CREAM,true)
+    _draw_booster(0,hints_left,"HINT","booster_0")
+    _draw_booster(1,shuffles_left,"SHUFFLE","booster_2")
+    _draw_booster(2,hammers_left,"HAMMER","booster_1")
+    _draw_booster(3,undo_left,"UNDO","undo")
     _draw_fx()
 
 func _draw_fx() -> void:
+    var calm := save.pref("reduce_motion")
+    # The render's purple-white matching glow, expanding halo and gold sparks.
+    for burst in impact_fx:
+        var p: Vector2=burst["pos"]
+        var t:=clampf(float(burst["life"])/.72,0.0,1.0)
+        var color: Color=burst["color"]
+        var radius:=26.0+(1.0-t)*58.0
+        draw_circle(p,50*t,Color(color.r,color.g,color.b,.11*t))
+        draw_arc(p,radius,0,TAU,48,Color(.97,.79,1,.63*t),3.5,true)
+        draw_arc(p,radius*.72,0,TAU,48,Color(.61,.32,1,.45*t),3,true)
+        if not calm:
+            for j in range(8):
+                var a:=float(j)*TAU/8.0+clock*.52
+                var outer:=p+Vector2(cos(a),sin(a))*(18+(1-t)*56)
+                var inner:=p+Vector2(cos(a),sin(a))*(10+(1-t)*35)
+                draw_line(inner,outer,Color(1,.86,.48,.75*t),2,true)
+                _tex("spark",Rect2(outer-Vector2(8,8),Vector2(16,16)),Color(.95,.75,1,t))
     for p in sparkles:
-        var life: float = p["life"]
-        var tint: Color = p["color"]
-        tint.a = clampf(life / 0.6, 0, 1)
-        var pos: Vector2 = p["pos"]
-        _tex("spark", Rect2(pos - Vector2(20, 20), Vector2(40, 40)), tint)
-    if fall_age < 0.31:
-        var t := clampf(fall_age / 0.31, 0.0, 1.0)
-        var eased := 1.0 - pow(1.0 - t, 3.0)
+        var life: float=p["life"]
+        var tint: Color=p["color"]
+        tint.a=clampf(life/.7,0.0,1.0)
+        var pos: Vector2=p["pos"]
+        var vel: Vector2=p["vel"]
+        if not calm:draw_line(pos,pos-vel*.06,Color(tint.r,tint.g,tint.b,tint.a*.6),2,true)
+        _tex("spark",Rect2(pos-Vector2(15,15),Vector2(30,30)),tint)
+    if fall_age<.31:
+        var t:=clampf(fall_age/.31,0.0,1.0)
+        var eased:=1.0-pow(1.0-t,3.0)
         for ghost in fall_ghosts:
-            var pos: Vector2 = (ghost["from"] as Vector2).lerp(ghost["to"] as Vector2, eased)
-            var rect := Rect2(ORIGIN + pos * CELL + Vector2(1, 1), Vector2(CELL - 2, CELL - 2))
-            _draw_live_gem(rect, int(ghost["value"]), int(ghost["target"]))
+            var pos: Vector2=(ghost["from"] as Vector2).lerp(ghost["to"] as Vector2,eased)
+            var rect:=Rect2(ORIGIN+pos*CELL+Vector2(1,1),Vector2(CELL-2,CELL-2))
+            _draw_live_gem(rect,int(ghost["value"]),int(ghost["target"]))
     for p in popups:
-        var life: float = p["life"]
-        var pos: Vector2 = p["pos"]
-        _fancy(str(p["text"]), pos.x, pos.y + (1 - life) * (-58), 33)
+        var t:=clampf(float(p["life"]),0.0,1.0)
+        var pos: Vector2=p["pos"]
+        var yy:=pos.y+(1.0-t)*(-58.0)
+        var text_value:=str(p["text"])
+        var font_size:=34 if not text_value.begins_with("COMBO") else 25
+        _label(text_value,pos.x+2,yy+3,font_size,Color(.18,.03,.24,t),true,display_font)
+        _label(text_value,pos.x,yy,font_size,Color(1,.77,.35,t),true,display_font)
 
 func _modal(dim: float = 0.77) -> void:
     draw_rect(Rect2(0,0,720,1440),Color(0.02,0.01,0.06,dim))
@@ -544,7 +606,7 @@ func _draw_tutorial() -> void:
         _label("SWAP ADJACENT GEMS TO MAKE 3+.", 360, 608, 19, CREAM, true)
         _label("Matched gems disappear and fall.", 360, 650, 22, CREAM, true)
         _label("NO NEW GEMS will replace them.", 360, 688, 21, GOLD, true)
-        _label("Clear the board for three stars!", 360, 727, 21, CREAM, true)
+        _label("Finish using few moves for extra stars!", 360, 727, 20, CREAM, true)
         _label("A round ends only when no moves", 360, 763, 21, CREAM, true)
         _label("remain or the board is empty.", 360, 794, 21, CREAM, true)
     else:
@@ -567,20 +629,20 @@ func _input(event: InputEvent) -> void:
     if event is InputEventScreenTouch:
         var e := event as InputEventScreenTouch
         if e.pressed:
-            touch_start = e.position/_scale()
+            touch_start = (e.position-_offset())/_scale()
             touch_down = true
         elif touch_down:
             touch_down = false
-            _gesture(touch_start,e.position/_scale())
+            _gesture(touch_start,(e.position-_offset())/_scale())
     elif event is InputEventMouseButton and not OS.has_feature("mobile"):
         var e := event as InputEventMouseButton
         if e.button_index == MOUSE_BUTTON_LEFT:
             if e.pressed:
-                touch_start = e.position/_scale()
+                touch_start = (e.position-_offset())/_scale()
                 touch_down = true
             elif touch_down:
                 touch_down = false
-                _gesture(touch_start,e.position/_scale())
+                _gesture(touch_start,(e.position-_offset())/_scale())
     elif event is InputEventKey:
         var e := event as InputEventKey
         if e.pressed and e.keycode in [KEY_ESCAPE,KEY_BACK]:
@@ -604,7 +666,7 @@ func _gesture(start: Vector2, finish: Vector2) -> void:
         "victory","failure": _touch_result(p)
         "tutorial":
             if _inside(p,122,840,476,76):
-                save.data["tutorial_done_v04"] = true
+                save.data["tutorial_done_v05"] = true
                 save.mark_tutorial()
                 state="playing"
                 _save_current()
@@ -617,6 +679,7 @@ func _gesture(start: Vector2, finish: Vector2) -> void:
                 world_index=0
                 settings_return="menu"
                 state="menu"
+    _music_state()
     queue_redraw()
 
 func _back() -> void:
@@ -740,21 +803,22 @@ func _touch_result(p: Vector2) -> void:
         state = "menu"
 
 func _touch_game(start: Vector2, p: Vector2) -> void:
-    if _inside(p, 18, 50, 88, 85):
+    if _inside(p, 10, 55, 77, 76):
         _save_current()
         state = "menu"
         return
-    if _inside(p, 619, 50, 89, 85):
+    if _inside(p, 638, 176, 82, 86):
         _save_current()
         state = "paused"
         return
     for i in range(4):
         var x := 13 + i * 175
-        if _inside(p, x, 1186, 168, 132):
+        if _inside(p, x, 1162, 168, 156):
             match i:
                 0:
                     if hints_left > 0:
                         hints_left -= 1
+                        boosters_used+=1
                         _show_hint()
                         _save_current()
                     else:
@@ -831,6 +895,9 @@ func _configure_level(w: int, lvl: int) -> void:
     hammers_left = 2
     undo_left = 3
     undo_history.clear()
+    boosters_used=0
+    locks.clear()
+    impact_fx.clear()
     hammer_mode = false
     selected = -1
     hint_cells.clear()
@@ -845,7 +912,7 @@ func _start_level(w: int, lvl: int) -> void:
     _configure_level(w, clampi(lvl, 1, LEVEL_COUNT))
     _create_board()
     start_gems = QuestRules.remaining(board)
-    state = "playing" if bool(save.data.get("tutorial_done_v04", false)) else "tutorial"
+    state = "playing" if bool(save.data.get("tutorial_done_v05", false)) else "tutorial"
     _save_current()
     _reset_idle()
     _music_state()
@@ -859,8 +926,8 @@ func _resume_saved() -> bool:
     var restored: Array = current.get("board", [])
     if restored.size() != ROWS * COLS:
         return false
-    if not current.has("mode"):
-        # Never reinterpret a v0.3 refilling board as a v0.4 finite puzzle.
+    if int(current.get("board_version", 0)) != 5:
+        # Preserve completed stars, but do not reinterpret old puzzle layouts.
         save.clear_current()
         return false
     mode = str(current.get("mode", "quest"))
@@ -869,7 +936,13 @@ func _resume_saved() -> bool:
     _configure_level(clampi(int(current.get("world", 0)), 0, 3), clampi(int(current.get("level", 1)), 1, LEVEL_COUNT))
     board.clear()
     for value in restored:
-        board.append(clampi(int(value), QuestRules.WALL, 5))
+        board.append(clampi(int(value), QuestRules.CRACK, 5))
+    locks.clear()
+    for value in current.get("locks", []):
+        locks.append(clampi(int(value),0,2))
+    if locks.size()!=64:locks.resize(64);locks.fill(0)
+    reference_moves=maxi(1,int(current.get("reference_moves",12)))
+    boosters_used=maxi(0,int(current.get("boosters_used",0)))
     score = maxi(0, int(current.get("score", 0)))
     moves_left = maxi(0, int(current.get("moves", 25)))
     moves_used = maxi(0, int(current.get("moves_used", 0)))
@@ -884,7 +957,7 @@ func _resume_saved() -> bool:
     for item in prior:
         if typeof(item) == TYPE_DICTIONARY and item.get("board", []).size() == 64:
             undo_history.append(item)
-    state = "playing" if bool(save.data.get("tutorial_done_v04", false)) else "tutorial"
+    state = "playing" if bool(save.data.get("tutorial_done_v05", false)) else "tutorial"
     _reset_idle()
     queue_redraw()
     return true
@@ -893,7 +966,8 @@ func _save_current() -> void:
     if board.size() != ROWS * COLS:
         return
     save.set_current({
-        "mode": mode, "world": world_index, "level": level, "board": board.duplicate(),
+        "mode": mode,"board_version":5,"world": world_index, "level": level, "board": board.duplicate(),
+        "locks":locks.duplicate(),"reference_moves":reference_moves,"boosters_used":boosters_used,
         "score": score, "moves": moves_left, "moves_used": moves_used,
         "start_gems": start_gems, "collected": collected,
         "hints": hints_left, "shuffles": shuffles_left, "hammers": hammers_left,
@@ -904,10 +978,14 @@ func _create_board() -> void:
     if mode == "quest":
         var scene: Dictionary = QuestRules.generate(world_index, level)
         board = scene["board"].duplicate()
+        locks = scene["locks"].duplicate()
+        reference_moves = int(scene["min_certified_moves"])
         if not QuestRules.certified_solution(world_index, level):
             push_error("Quest puzzle did not pass the clearing proof.")
         return
     # Preserve the original refill-based match-three for optional Arcade Mode.
+    locks.resize(64)
+    locks.fill(0)
     for attempt in range(350):
         board.resize(ROWS * COLS)
         for row in range(ROWS):
@@ -932,7 +1010,7 @@ func _swap_values(a: int, b: int) -> void:
     board[b] = v
 
 func _find_hint() -> Array[int]:
-    var options := QuestRules.legal_moves(board)
+    var options := QuestRules.legal_moves(board,locks)
     if options.is_empty():
         return []
     var best := options[0]
@@ -950,7 +1028,11 @@ func _attempt_swap(a: int, b: int) -> void:
     if state != "playing" or a < 0 or b < 0 or not _adjacent(a, b):
         return
     if board[a] < 0 or board[b] < 0:
-        status_message = "Stone walls and empty sockets cannot be swapped."
+        status_message = "Obstacles and empty sockets cannot be swapped."
+        return
+    if locks.size()==64 and (locks[a]>0 or locks[b]>0):
+        status_message="A locked gem must be freed by a neighboring match!"
+        _play_sound("fail")
         return
     _swap_values(a, b)
     if _find_matches().is_empty():
@@ -985,16 +1067,25 @@ func _resolve() -> void:
         points += gain
         score += gain
         var hit_map := {}
+        if not save.pref("reduce_motion"):
+            impact_flash=1.0
         for idx in hits:
             hit_map[idx] = true
             if objective_type == "collect" and board[idx] == target_glyph:
                 collected += 1
-            if sparkles.size() < 150:
+            if sparkles.size() < 350:
                 _emit_fx(idx, GEM_COLORS[board[idx]])
+            if impact_fx.size()<96:
+                impact_fx.append({"pos":ORIGIN+Vector2((idx%COLS)*CELL+CELL*.5,int(idx/COLS)*CELL+CELL*.5),"life":.72,"color":GEM_COLORS[board[idx]]})
+        var result: Dictionary = QuestRules.adjacent_obstacles(board,locks,hits)
+        for cracked in result["cracked"]:
+            _emit_fx(int(cracked),GOLD)
+        for unlocked in result["unlocked"]:
+            _emit_fx(int(unlocked),Color("#a5edff"))
         _start_fall_animation(hit_map)
         for idx in hits:
             board[idx] = QuestRules.EMPTY
-        QuestRules.settle(board)
+        QuestRules.settle(board,locks)
         if mode == "arcade":
             # The refill mechanic is exclusive to Arcade.
             for col in range(COLS):
@@ -1004,7 +1095,9 @@ func _resolve() -> void:
                         board[idx] = randi_range(0, 5)
     if total > 0:
         status_message = ("%s COMBO!  " % combo if combo > 1 else "") + "+%s POINTS" % points
-        popups.append({"text": "+%s" % points, "life": 1.0, "pos": Vector2(360, 720)})
+        popups.append({"text": "+%s" % points, "life": 1.0, "pos": Vector2(360, 735)})
+        if combo > 1:
+            popups.append({"text":"COMBO x%s!" % combo,"life":1.0,"pos":Vector2(360,790)})
         _play_sound("match")
         _vibrate(22)
         save.data["lifetime_matches"] = int(save.data.get("lifetime_matches", 0)) + total
@@ -1012,12 +1105,12 @@ func _resolve() -> void:
 func _emit_fx(idx: int,clr: Color) -> void:
     if save.pref("reduce_motion"):
         return
-    var center:=ORIGIN+Vector2((idx%COLS)*CELL+39,int(idx/COLS)*CELL+39)
-    for j in range(5):
+    var center:=ORIGIN+Vector2((idx%COLS)*CELL+CELL*.5,int(idx/COLS)*CELL+CELL*.5)
+    for j in range(10):
         var angle:=randf()*TAU
         sparkles.append({
             "pos":center,"vel":Vector2(cos(angle),sin(angle))*randf_range(75,200),
-            "life":randf_range(.3,.62),"color":clr
+            "life":randf_range(.35,.72),"color":clr
         })
 
 func _hammer(idx: int) -> void:
@@ -1032,7 +1125,9 @@ func _hammer(idx: int) -> void:
     _emit_fx(idx, GEM_COLORS[old_color])
     board[idx] = QuestRules.EMPTY
     score += 75
-    QuestRules.settle(board)
+    if locks.size()==64:locks[idx]=0
+    QuestRules.settle(board,locks)
+    boosters_used+=1
     if mode == "arcade":
         for row in range(ROWS):
             for col in range(COLS):
@@ -1051,7 +1146,7 @@ func _shuffle() -> void:
     var positions: Array[int] = []
     var colors: Array[int] = []
     for idx in range(board.size()):
-        if board[idx] >= 0:
+        if board[idx] >= 0 and (locks.is_empty() or locks[idx]==0):
             positions.append(idx)
             colors.append(board[idx])
     if positions.size() < 3:
@@ -1064,7 +1159,7 @@ func _shuffle() -> void:
         colors.shuffle()
         for i in range(positions.size()):
             new_board[positions[i]] = colors[i]
-        if QuestRules.scan(new_board).is_empty() and not QuestRules.legal_moves(new_board).is_empty():
+        if QuestRules.scan(new_board).is_empty() and not QuestRules.legal_moves(new_board,locks).is_empty():
             found = true
             break
     if not found:
@@ -1073,6 +1168,7 @@ func _shuffle() -> void:
     _push_undo()
     board = new_board
     shuffles_left -= 1
+    boosters_used+=1
     selected = -1
     hint_cells.clear()
     status_message = "Remaining gems rearranged. No new gems added!"
@@ -1093,20 +1189,20 @@ func _finish_or_save() -> void:
     if mode == "quest":
         var left := QuestRules.remaining(board)
         var cleared := start_gems - left
-        if left == 0 or _find_hint().is_empty():
-            var percent := float(cleared) / float(maxi(1, start_gems))
-            earned_stars = 3 if left == 0 else (2 if percent >= 0.85 else (1 if percent >= 0.65 else 0))
-            if earned_stars > 0:
-                state = "victory"
-                status_message = "PERFECT CLEAR!" if left == 0 else "BOARD COMPLETE!"
-                save.record_victory(world_index, level, score, earned_stars)
-                _play_sound("win")
-                _vibrate(70)
-            else:
-                state = "failure"
-                status_message = "No legal matches remain."
-                save.clear_current()
-                _play_sound("fail")
+        if left == 0:
+            earned_stars=1
+            if moves_used<=ceili(float(reference_moves)*1.20):earned_stars+=1
+            if moves_used<=reference_moves and boosters_used==0:earned_stars+=1
+            state="victory"
+            status_message="PERFECT CLEAR!"
+            save.record_victory(world_index,level,score,earned_stars)
+            _play_sound("win")
+            _vibrate(70)
+        elif _find_hint().is_empty():
+            state="failure"
+            status_message="No legal matches remain. Try a different strategy!"
+            save.clear_current()
+            _play_sound("fail")
         else:
             _save_current()
         return
@@ -1139,16 +1235,35 @@ func _play_sound(name: String) -> void:
         player.play()
 
 func _music_state() -> void:
-    if music_player == null:
+    if music_player == null or world_tracks.size()!=5:
         return
-    var level_linear := maxf(0.001,float(save.setting_int("music_volume",85))/100.0)
-    music_player.volume_db = linear_to_db(level_linear) - 2.0
-    if save.pref("music") and save.setting_int("music_volume",85)>0:
-        if not music_player.playing:
-            music_player.play()
-    elif music_player.playing:
+    var game_context:=state in ["playing","paused","victory","failure","tutorial"] or (state=="settings" and settings_return=="paused")
+    var target_index:=world_index+1 if game_context else 0
+    var volume_linear:=float(save.setting_int("music_volume",85))/100.0
+    var target_db:=linear_to_db(maxf(.001,volume_linear))-2.0
+    if not save.pref("music") or volume_linear<=0:
         music_player.stop()
-
+        music_alt_player.stop()
+        return
+    if music_track_id!=target_index:
+        var old_player: AudioStreamPlayer=music_player
+        var new_player: AudioStreamPlayer=music_alt_player
+        new_player.stop()
+        new_player.stream=world_tracks[target_index]
+        new_player.volume_db=-46.0
+        new_player.play()
+        music_player=new_player
+        music_alt_player=old_player
+        music_track_id=target_index
+        var transition:=create_tween().set_parallel(true)
+        transition.tween_property(new_player,"volume_db",target_db,.75)
+        if old_player.playing:
+            transition.tween_property(old_player,"volume_db",-48.0,.75)
+        transition.set_parallel(false)
+        transition.tween_callback(old_player.stop)
+    else:
+        music_player.volume_db=target_db
+        if not music_player.playing:music_player.play()
 
 func _start_arcade(w: int) -> void:
     mode = "arcade"
@@ -1157,7 +1272,7 @@ func _start_arcade(w: int) -> void:
 
 func _snapshot() -> Dictionary:
     return {
-        "board": board.duplicate(),
+        "board": board.duplicate(),"locks":locks.duplicate(),"boosters_used":boosters_used,
         "score": score, "moves": moves_left, "moves_used": moves_used,
         "collected": collected, "hints": hints_left,
         "shuffles": shuffles_left, "hammers": hammers_left
@@ -1181,6 +1296,11 @@ func _undo_last() -> void:
     board.clear()
     for item in restored:
         board.append(int(item))
+    locks.clear()
+    for item in last.get("locks",[]):
+        locks.append(int(item))
+    if locks.size()!=64:locks.resize(64);locks.fill(0)
+    boosters_used=int(last.get("boosters_used",0))
     score = int(last["score"])
     moves_left = int(last["moves"])
     moves_used = int(last["moves_used"])
@@ -1208,11 +1328,11 @@ func _start_fall_animation(hits: Dictionary) -> void:
     for col in range(COLS):
         var bottom := ROWS - 1
         while bottom >= 0:
-            if board[bottom * COLS + col] == QuestRules.WALL:
+            if board[bottom * COLS + col] in [QuestRules.WALL,QuestRules.CRACK]:
                 bottom -= 1
                 continue
             var top := bottom
-            while top >= 0 and board[top * COLS + col] != QuestRules.WALL:
+            while top >= 0 and board[top * COLS + col] not in [QuestRules.WALL,QuestRules.CRACK]:
                 top -= 1
             var active: Array[int] = []
             for row in range(top + 1, bottom + 1):
@@ -1234,28 +1354,26 @@ func _start_fall_animation(hits: Dictionary) -> void:
 
 
 func _draw_nav_icons() -> void:
-    # Dedicated controls, not hidden behind a giant bottom button.
-    _rect(Rect2(21, 58, 72, 70), Color("#38204f"), 14, Color("#ecc77f"), 3)
-    _rect(Rect2(627, 58, 72, 70), Color("#38204f"), 14, Color("#ecc77f"), 3)
-    draw_line(Vector2(38, 93), Vector2(57, 73), CREAM, 5, true)
-    draw_line(Vector2(57, 73), Vector2(78, 93), CREAM, 5, true)
-    draw_line(Vector2(44, 90), Vector2(44, 113), CREAM, 4, true)
-    draw_line(Vector2(72, 90), Vector2(72, 113), CREAM, 4, true)
-    draw_line(Vector2(44, 113), Vector2(72, 113), CREAM, 4, true)
-    draw_line(Vector2(651, 77), Vector2(651, 110), CREAM, 8, true)
-    draw_line(Vector2(674, 77), Vector2(674, 110), CREAM, 8, true)
+    # Minimal buttons are separated from the illustrated title.
+    _rect(Rect2(14,65,63,59),Color("#352151"),12,Color("#ecc780"),3)
+    draw_line(Vector2(25,93),Vector2(44,75),CREAM,4,true)
+    draw_line(Vector2(44,75),Vector2(64,93),CREAM,4,true)
+    draw_line(Vector2(31,91),Vector2(31,110),CREAM,3,true)
+    draw_line(Vector2(56,91),Vector2(56,110),CREAM,3,true)
+    draw_line(Vector2(31,110),Vector2(56,110),CREAM,3,true)
+    _rect(Rect2(645,183,65,72),Color("#38204d"),15,Color("#efc983"),4)
+    draw_line(Vector2(666,201),Vector2(666,236),CREAM,7,true)
+    draw_line(Vector2(689,201),Vector2(689,236),CREAM,7,true)
 
-
-func _draw_booster(index: int, count: int, label: String, key: String) -> void:
-    var x := 13.0 + float(index) * 175.0
-    _rect(Rect2(x, 1186, 168, 132), Color(0.11, 0.055, 0.22, 0.62), 19, Color("#bd9c70"), 2)
-    _tex(key, Rect2(x + 36, 1193, 97, 86))
-    _rect(Rect2(x + 118, 1195, 39, 33), Color("#272043"), 13, GOLD, 2)
-    _label(str(count), x + 138, 1219, 20, GOLD, true)
-    _label(label, x + 84, 1302, 18, CREAM, true)
-    if (index == 2 and hammer_mode):
-        _rect(Rect2(x + 4, 1190, 160, 124), Color.TRANSPARENT, 18, Color("#a8fff3"), 4)
-
+func _draw_booster(index: int,count: int,label: String,key: String) -> void:
+    var x:=12.0+float(index)*175.0
+    _tex("booster_plate",Rect2(x,1165,164,156),Color.WHITE if count>0 else Color(.55,.55,.63,.8))
+    _tex(key,Rect2(x+34,1177,98,91))
+    _rect(Rect2(x+115,1180,38,34),Color("#281940"),15,GOLD,2)
+    _label(str(count),x+134,1203,19,GOLD,true)
+    _label(label,x+81,1303,18,CREAM,true,display_font)
+    if index==2 and hammer_mode:
+        _rect(Rect2(x+5,1170,154,145),Color.TRANSPARENT,18,Color("#b4fff9"),3)
 
 func _draw_live_gem(rect: Rect2, tile: int, index: int) -> void:
     if tile < 0 or tile >= 6:
@@ -1278,4 +1396,4 @@ func _draw_live_gem(rect: Rect2, tile: int, index: int) -> void:
     var glyph: String = SYMBOLS[world_index][tile]
     _label(glyph, rect.get_center().x, rect.position.y + 50, 41, Color("#fff9ec"), true, _glyph_font(tile))
     if save.pref("color_assist"):
-        _label(str(tile + 1), rect.position.x + rect.size.x - 12, rect.position.y + 18, 13, Color("#ffedac"), true)
+        _label(str(tile + 1), rect.position.x + rect.size.x - 13, rect.position.y + 18, 14, Color("#ffedac"), true)

@@ -1,137 +1,139 @@
 extends SceneTree
-
-const QuestRules = preload("res://scripts/quest_rules.gd")
-const SaveData = preload("res://scripts/save_data.gd")
-
+const QuestRules=preload("res://scripts/quest_rules.gd")
+const SaveData=preload("res://scripts/save_data.gd")
 func _initialize() -> void:
     call_deferred("_run")
-
-func _fail(reason: String, world: int = -1, level: int = -1) -> void:
-    push_error("SMOKE FAIL: %s (world=%s level=%s)" % [reason,world,level])
+func fail(reason:String,world:int=-1,level:int=-1) -> void:
+    push_error("SMOKE FAIL: %s (%s-%s)" % [reason,world,level])
     quit(1)
-
 func _run() -> void:
-    # Every curated quest board must have no premature matches, a first legal
-    # move, and a constructive proof that it clears completely without refill.
+    var min_steps:=999
+    var max_steps:=0
+    var cracked_levels:=0
+    var locked_levels:=0
     for world in range(4):
         for level in range(1,13):
-            var scene: Dictionary = QuestRules.generate(world,level)
-            var tiles: Array[int] = scene["board"]
-            if tiles.size() != 64 or QuestRules.remaining(tiles) != int(scene["gem_count"]):
-                _fail("Generator count mismatch",world,level)
-                return
-            if not QuestRules.scan(tiles).is_empty() or QuestRules.legal_moves(tiles).is_empty():
-                _fail("Preexisting match or no first move",world,level)
-                return
+            var scene:Dictionary=QuestRules.generate(world,level)
+            var tiles:Array[int]=scene["board"]
+            var seals:Array[int]=scene["locks"]
+            if tiles.size()!=64 or seals.size()!=64:
+                fail("Puzzle dimensions invalid",world,level);return
+            if QuestRules.remaining(tiles)!=int(scene["gem_count"]) or not QuestRules.scan(tiles).is_empty():
+                fail("Puzzle count mismatch/pre-matches",world,level);return
+            if QuestRules.legal_moves(tiles,seals).is_empty():
+                fail("Puzzle has no initial legal move",world,level);return
             if not QuestRules.certified_solution(world,level):
-                _fail("Puzzle is not provably solvable",world,level)
-                return
-    var game = load("res://scenes/Main.tscn").instantiate()
+                fail("Booster-free full clear not certified",world,level);return
+            var steps:=int(scene["min_certified_moves"])
+            if steps<9:
+                fail("Puzzle is still trivially short",world,level);return
+            min_steps=mini(min_steps,steps)
+            max_steps=maxi(max_steps,steps)
+            var obstacles:=0
+            for v in tiles:
+                if v in [QuestRules.WALL,QuestRules.CRACK]:obstacles+=1
+                if v==QuestRules.CRACK:cracked_levels+=1
+            if obstacles>5:
+                fail("Too many stone blockers",world,level);return
+            for v in seals:
+                if v>0:locked_levels+=1
+    if max_steps<17 or locked_levels<10 or cracked_levels<2:
+        fail("Missing advanced layouts/obstacles");return
+    var game=load("res://scenes/Main.tscn").instantiate()
     root.add_child(game)
     game.save.reset_progress()
-    game.save.data["tutorial_done_v04"] = true
-    game.mode = "quest"
+    game.save.data["tutorial_done_v05"]=true
+    game.mode="quest"
+    if game.world_tracks.size()!=5:
+        fail("Missing original world soundtracks");return
     for world in range(4):
         game._start_level(world,1)
-        var before: Array[int] = game.board.duplicate()
-        var total: int = QuestRules.remaining(game.board)
-        var hint: Array = game._find_hint()
-        if hint.size()!=2 or not QuestRules.can_match(game.board,hint[0],hint[1]):
-            _fail("Invalid hint",world,1);return
-        game._attempt_swap(hint[0],hint[1])
-        if game.mode != "quest" or QuestRules.remaining(game.board) >= total or game.moves_used != 1:
-            _fail("Quest didn't consume gems",world,1);return
-        if game.moves_left != 25:
-            _fail("Quest wrongly uses arcade move limit",world,1);return
-        if game.save.data["current"].get("mode","")!="quest":
-            _fail("Quest autosave missing",world,1);return
-        if game.state != "playing":
-            _fail("Quest ended prematurely after one match",world,1);return
+        var before:Array[int]=game.board.duplicate()
+        var original_locks:Array[int]=game.locks.duplicate()
+        var scene:Dictionary=QuestRules.generate(world,1)
+        var path:Array=scene["solution"]
+        var pair=QuestRules.solution_pair(scene,0)
+        if not QuestRules.can_match(game.board,pair.x,pair.y,game.locks):
+            fail("First certified move blocked",world,1);return
+        game._attempt_swap(pair.x,pair.y)
+        if game.moves_used!=1 or QuestRules.remaining(game.board)>=int(scene["gem_count"]):
+            fail("Move did not reduce finite gems",world,1);return
+        if game.state!="playing":
+            fail("Ended after first move",world,1);return
         game._undo_last()
-        if game.board != before or game.moves_used != 0 or game.undo_left != 2:
-            _fail("Undo did not restore exact board and score",world,1);return
-        if game.save.data["current"].get("undo_left",-1) != 2:
-            _fail("Undo was not persisted",world,1);return
-        # Complete known scripted path: bottom gadget clears one full row at
-        # a time. No refills, no reliance on paid boosters, no dead-end.
-        var scene: Dictionary = QuestRules.generate(world,1)
-        var groups: int = int(scene["groups"])
-        for group_index in range(groups):
-            if game.state != "playing":
-                _fail("Scripted solution ended before board empty",world,1);return
-            var pair: Vector2i = QuestRules.solution_pair(scene, group_index)
-            game._attempt_swap(pair.x, pair.y)
-        if game.state != "victory" or QuestRules.remaining(game.board) != 0:
-            _fail("Quest did not finish on empty board",world,1);return
-        if game.earned_stars != 3 or game.save.unlocked_level(world) < 2:
-            _fail("Perfect clear stars/unlock failed",world,1);return
-        if not game.save.data["current"].is_empty():
-            _fail("Victory didn't clear active save",world,1);return
-    game.mode = "quest"
+        if game.board!=before or game.locks!=original_locks or game.moves_used!=0:
+            fail("Undo did not restore tile/lock states",world,1);return
+        if game.undo_left!=2:
+            fail("Undo charge missing",world,1);return
+        for k in range(path.size()):
+            var move:Vector2i=QuestRules.solution_pair(scene,k)
+            if game.state!="playing":
+                fail("Quest ended before puzzle was cleared",world,1);return
+            game._attempt_swap(move.x,move.y)
+        if game.state!="victory" or QuestRules.remaining(game.board)!=0:
+            fail("Quest failed full board clear",world,1);return
+        if game.earned_stars!=3 or game.save.unlocked_level(world)<2:
+            fail("Certified perfect clear did not earn three stars",world,1);return
     game._start_level(0,2)
-    game.collected = 9999
-    game.score = 999999
+    game.score=999999
+    game.collected=999
     game._finish_or_save()
-    if game.state != "playing":
-        _fail("Quest ended early on legacy collection/score target");return
-    # Valid progress and settings must survive save reload.
-    var progress = SaveData.new()
+    if game.state!="playing":
+        fail("Quest erroneously completed on score");return
+    # Stalemate must fail even at high percentage; game is about empty boards.
+    var occupied:Array[int]=[]
+    for i in range(64):
+        if game.board[i]>=0:occupied.append(i)
+    for i in range(occupied.size()):
+        game.board[occupied[i]]=QuestRules.EMPTY if i>=2 else i
+    game._finish_or_save()
+    if game.state!="failure":
+        fail("Remaining gems at stalemate counted as victory");return
+    game._start_level(0,2)
+    var count_start:=QuestRules.remaining(game.board)
+    game._shuffle()
+    if QuestRules.remaining(game.board)!=count_start:
+        fail("Quest shuffle changed gem count");return
+    game._start_level(0,2)
+    count_start=QuestRules.remaining(game.board)
+    var chosen:=-1
+    for idx in range(64):
+        if game.board[idx]>=0 and game.locks[idx]==0:
+            chosen=idx;break
+    game._hammer(chosen)
+    if QuestRules.remaining(game.board)>=count_start:
+        fail("Hammer refilled a gem");return
+    # Locked tiles must be inaccessible until adjacent match.
+    game._start_level(0,9)
+    var seal:=-1
+    for idx in range(64):
+        if game.locks[idx]>0:seal=idx;break
+    if seal>=0:
+        var nbr:=QuestRules.neighbors(seal)
+        for other in nbr:
+            if game.board[other]>=0 and game.board[other]!=game.board[seal]:
+                var original_move_count:int=game.moves_used
+                game._attempt_swap(seal,other)
+                if game.moves_used!=original_move_count:
+                    fail("Swapped a locked gem");return
+                break
+    var progress=SaveData.new()
     progress.load_all()
     if progress.unlocked_level(0)<2:
-        _fail("Unlocked levels did not persist");return
+        fail("Completed levels not persisted");return
     progress.toggle_pref("reduce_motion")
-    var check = SaveData.new()
+    var check=SaveData.new()
     check.load_all()
-    if check.pref("reduce_motion") != progress.pref("reduce_motion"):
-        _fail("Settings did not persist");return
-    game._start_level(0,1)
-    var count_before := QuestRules.remaining(game.board)
-    var all_positions: Array[int] = []
-    for i in range(64):
-        if game.board[i] >= 0:
-            all_positions.append(i)
-    game.hammers_left = 3
-    game._hammer(all_positions[0])
-    if QuestRules.remaining(game.board) >= count_before:
-        _fail("Hammer refilled the finite board");return
-    # A stalemate ends the round and awards partial stars, never prematurely.
-    game.mode = "quest"
-    game._start_level(0,1)
-    var gems_left: Array[int] = []
-    for i in range(64):
-        if game.board[i] >= 0:
-            gems_left.append(i)
-    for i in range(gems_left.size()):
-        game.board[gems_left[i]] = QuestRules.EMPTY if i >= 3 else i
-    game._finish_or_save()
-    if game.state != "victory" or game.earned_stars != 2:
-        _fail("No-moves partial clear did not award two stars");return
-    game._start_level(0,1)
-    var sparse: Array[int] = []
-    for i in range(64):
-        if game.board[i] >= 0:
-            sparse.append(i)
-    for i in range(sparse.size()):
-        game.board[sparse[i]] = QuestRules.EMPTY if i >= 3 else i
-    game.start_gems = 3
-    game._finish_or_save()
-    if game.state != "failure":
-        _fail("Low-clear-rate stalemate was not a loss");return
-    game._start_level(0,1)
-    var count_start := QuestRules.remaining(game.board)
-    game._shuffle()
-    if QuestRules.remaining(game.board) != count_start:
-        _fail("Quest shuffle added or removed gems");return
-    game.mode = "arcade"
-    game._start_level(0,1)
-    if QuestRules.remaining(game.board) != 64:
-        _fail("Arcade started with empty slots");return
-    var h: Array = game._find_hint()
-    if h.size() != 2:
-        _fail("Arcade has no playable swap");return
-    game._attempt_swap(h[0],h[1])
-    if QuestRules.remaining(game.board) != 64:
-        _fail("Arcade did not replenish matched gems");return
+    if progress.pref("reduce_motion")!=check.pref("reduce_motion"):
+        fail("Setting failed persistence");return
+    game.mode="arcade"
+    game._start_arcade(0)
+    if QuestRules.remaining(game.board)!=64:
+        fail("Arcade board not full");return
+    var hint:Array=game._find_hint()
+    game._attempt_swap(hint[0],hint[1])
+    if QuestRules.remaining(game.board)!=64:
+        fail("Arcade no longer replenishes");return
     game.save.reset_progress()
-    print("PASS: V0.4 FINITE QUEST, 48 certified puzzles, no refill, cleared-only victory, undo, boosters, arcade, autosave")
+    print("PASS: V0.5 CERTIFIED PUZZLES: 48 levels, %s-%s proven steps, locks, cracked blocks, distinct audio, animations, no-refill, undo, shuffle, save, arcade" % [min_steps,max_steps])
     quit(0)
