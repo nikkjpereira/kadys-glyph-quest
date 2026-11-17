@@ -1,5 +1,5 @@
 extends Node2D
-## Kady's Glyph Quest v0.2: storybook UI, level objectives, saves and effects.
+## Runefall v0.6.1: responsive, finite match-3 with relics and world restoration.
 ## Keep play fully functional offline. No ads or billing in test releases.
 
 const SaveData = preload("res://scripts/save_data.gd")
@@ -139,7 +139,8 @@ func _ready() -> void:
         var file_name: String = "hud_medallion" if item == "medallion" else ("title_plaque" if item == "title" else ("button_plaque" if item == "button" else ("magic_spark" if item == "spark" else item)))
         art[item] = load("res://assets/v03/" + file_name + ".png") as Texture2D
     art["board_frame"] = load("res://assets/v05/board_frame.png") as Texture2D
-    art["render_logo"] = load("res://assets/v05/logo.png") as Texture2D
+    art["render_logo"] = load("res://assets/runefall/runefall_logo_header.png") as Texture2D
+    art["logo_primary"] = load("res://assets/runefall/runefall_logo_primary.png") as Texture2D
     art["cracked"] = load("res://assets/v05/cracked.png") as Texture2D
     art["lock"] = load("res://assets/v05/lock.png") as Texture2D
     art["booster_plate"] = load("res://assets/v05/booster_plate.png") as Texture2D
@@ -403,10 +404,18 @@ func _world_font(world: int) -> Font:
     return [glyph_fonts[0],glyph_fonts[1],glyph_fonts[2],glyph_fonts[0]][world]
 
 func _draw_logo(x: float, y: float, w: float, h: float) -> void:
-    _tex("render_logo", Rect2(x,y,w,h))
+    # Preserve the proportions of the approved golden Runefall artwork.
+    var logo: Texture2D=art.get("render_logo")
+    if logo==null:return
+    var natural_size: Vector2=logo.get_size()
+    var scale_factor:=minf(w/natural_size.x,h/natural_size.y)
+    var size:=natural_size*scale_factor
+    var anchor:=Vector2(x+(w-size.x)*.5,y+(h-size.y)*.5)
+    draw_texture_rect(logo,Rect2(anchor,size),false)
 
 func _draw_menu() -> void:
-    _draw_logo(28, 65, 664, 238)
+    _draw_logo(28, 76, 664, 186)
+    _label("MATCH. DISCOVER. AWAKEN.",360,294,23,GOLD,true,display_font)
     _panel(Rect2(52, 329, 616, 318), Color("#2e1d4b"), true, 0.92)
     _tex("world_%d" % world_index, Rect2(380, 374, 267, 207), Color(1, 1, 1, 0.93))
     _rect(Rect2(370, 372, 16, 200), Color(0.06, 0.03, 0.13, 0.55), 4)
@@ -438,7 +447,7 @@ func _draw_menu() -> void:
     _button(Rect2(52, 1173, 299, 73), "SETTINGS", false, 25)
     _button(Rect2(369, 1173, 299, 73), "PROGRESS", false, 25)
     _button(Rect2(172, 1267, 376, 70), "RELIC COLLECTION", false, 22)
-    _label("LIVING WORLDS  •  FINITE QUEST + ARCADE  •  v0.6", 360, 1368, 16, CREAM, true)
+    _label("RUNEFALL  •  MATCH. DISCOVER. AWAKEN.  •  v0.6.1", 360, 1368, 16, CREAM, true)
 
 func _draw_levels() -> void:
     _title("CHOOSE A LEVEL",WORLD_NAMES[world_index])
@@ -1712,7 +1721,8 @@ func _draw_tablet_game() -> void:
     _draw_fx()
 
 func _draw_tablet_menu() -> void:
-    _draw_logo(490,12,620,224)
+    _draw_logo(490,12,620,200)
+    _label("MATCH. DISCOVER. AWAKEN.",800,223,23,GOLD,true,display_font)
     _fancy("CHOOSE YOUR WORLD",800,274,32)
     for i in range(4):
         var xx:=50+i*384

@@ -1,8 +1,8 @@
-# Kady's Glyph Quest
+# Runefall
 
-**v0.6.0: Living Worlds Edition** · Godot 4.7.2 · Android · Offline
+**v0.6.1: Runefall Rebrand + Installer Verification** · Godot 4.7.2 · Android · Offline
 
-A gemstone-and-glyph match-3 adventure with four themed worlds: Runes, Egypt, East Asia, and Mixed. The public game title is provisional.
+A gemstone-and-glyph match-3 adventure with four themed worlds: Runes, Egypt, East Asia, and Mixed. The new visual identity is **Runefall** with the tagline **Match. Discover. Awaken.**. The internal package ID is intentionally unchanged for continuity.
 
 ## New in v0.6
 

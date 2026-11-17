@@ -1,0 +1,13 @@
+{
+  "name": "Runefall",
+  "tagline": "Match. Discover. Awaken.",
+  "colors": {
+    "midnight_indigo": "#0B0E3D",
+    "royal_purple": "#6A1FB8",
+    "arcane_gold": "#F6C24E",
+    "rune_cyan": "#22EBFF",
+    "crystal_violet": "#C653FF"
+  },
+  "original_art": "runefall_jewelbound_rune_emblem.png and runefall_fantasy_brand_board.png",
+  "notes": "Logo, app icon and splash assets derived from the approved Runefall brand artwork."
+}

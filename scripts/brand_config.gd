@@ -1,10 +1,11 @@
 extends RefCounted
 ## Rename-safe metadata. Updating a public store brand does not require
 ## changing the Android package ID (which would break installed apps).
-const DISPLAY_NAME := "Kady's Glyph Quest"
-const TITLE_LINE_1 := "KADY'S"
-const TITLE_LINE_2 := "GLYPH QUEST"
-const VERSION := "0.6.0"
+const DISPLAY_NAME := "Runefall"
+const TITLE_LINE_1 := "RUNEFALL"
+const TITLE_LINE_2 := ""
+const TAGLINE := "Match. Discover. Awaken."
+const VERSION := "0.6.1"
 const ANDROID_APPLICATION_ID := "com.nefariousmedia.kadysglyphquest"
 const ADS_ENABLED := false
 const IN_APP_PURCHASES_ENABLED := false
