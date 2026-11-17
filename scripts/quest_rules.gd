@@ -1,13 +1,18 @@
 extends RefCounted
-## Glyph Quest v0.5: certified, finite, gravity-aware puzzles.
+## Glyph Quest v0.6: dense certified puzzles, multi-stage seals, gravity, hints.
 const ROWS := 8
 const COLS := 8
 const EMPTY := -1
 const WALL := -2
 const CRACK := -3
 
+static var _catalog: Dictionary = {}
 static func generate(world: int, level: int) -> Dictionary:
-    var data: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://data/levels_v05.json"))
+    if _catalog.is_empty():
+        var json: Variant=JSON.parse_string(FileAccess.get_file_as_string("res://data/levels_v06.json"))
+        if typeof(json)==TYPE_DICTIONARY:
+            _catalog=json
+    var data: Variant=_catalog
     if typeof(data) != TYPE_DICTIONARY:
         push_error("Could not load certified v0.5 puzzles.")
         return {}
@@ -19,17 +24,24 @@ static func generate(world: int, level: int) -> Dictionary:
     var item: Dictionary = entries[key]
     var board: Array[int] = []
     var locks: Array[int] = []
+    var seal_types: Array[int] = []
     for value in item.get("board", []):
         board.append(int(value))
     for value in item.get("locks", []):
         locks.append(int(value))
+    for value in item.get("seal_types", []):
+        seal_types.append(int(value))
     return {
         "board":board,
         "locks":locks,
+        "seal_types":seal_types,
         "solution":item.get("solution",[]),
         "gem_count":int(item.get("gem_count",0)),
         "min_certified_moves":int(item.get("min_certified_moves",0)),
-        "obstacles":int(item.get("obstacles",0))
+        "obstacles":int(item.get("obstacles",0)),
+        "opening_choices":int(item.get("opening_choices",0)),
+        "board_family":str(item.get("board_family","Full Board")),
+        "relic":str(item.get("relic","Ancient Relic"))
     }
 
 static func solution_pair(level_data: Dictionary, index: int) -> Vector2i:
@@ -77,7 +89,7 @@ static func neighbors(idx: int) -> Array[int]:
     if row<ROWS-1:result.append(idx+COLS)
     return result
 
-static func adjacent_obstacles(tiles: Array[int],locks: Array[int], hits: Array[int]) -> Dictionary:
+static func adjacent_obstacles(tiles: Array[int],locks: Array[int], hits: Array[int],seal_types: Array[int] = []) -> Dictionary:
     var cracked: Dictionary = {}
     var unlocked: Dictionary = {}
     for idx in hits:
@@ -86,14 +98,18 @@ static func adjacent_obstacles(tiles: Array[int],locks: Array[int], hits: Array[
                 cracked[n]=true
             if not locks.is_empty() and tiles[n]>=0 and locks[n]>0:
                 locks[n]-=1
-                if locks[n]==0:unlocked[n]=true
+                if locks[n]==0:
+                    unlocked[n]=true
+                    if seal_types.size()==64:seal_types[n]=0
     for idx in hits:
         if not locks.is_empty():locks[idx]=0
+        if seal_types.size()==64:seal_types[idx]=0
     for idx in cracked.keys():
         tiles[idx]=EMPTY
+        if seal_types.size()==64:seal_types[idx]=0
     return {"cracked":cracked.keys(),"unlocked":unlocked.keys()}
 
-static func settle(tiles: Array[int],locks: Array[int] = []) -> void:
+static func settle(tiles: Array[int],locks: Array[int] = [],seal_types: Array[int] = []) -> void:
     for col in range(COLS):
         var bottom:=ROWS-1
         while bottom>=0:
@@ -105,31 +121,35 @@ static func settle(tiles: Array[int],locks: Array[int] = []) -> void:
                 top-=1
             var values: Array[int] = []
             var seals: Array[int] = []
+            var kinds: Array[int] = []
             for row in range(top+1,bottom+1):
                 var idx:=row*COLS+col
                 if tiles[idx]>=0:
                     values.append(tiles[idx])
                     if not locks.is_empty():seals.append(locks[idx])
+                    if seal_types.size()==64:kinds.append(seal_types[idx])
             for row in range(top+1,bottom+1):
                 var idx:=row*COLS+col
                 tiles[idx]=EMPTY
                 if not locks.is_empty():locks[idx]=0
+                if seal_types.size()==64:seal_types[idx]=0
             for k in range(values.size()):
                 var idx: int=(bottom-values.size()+1+k)*COLS+col
                 tiles[idx]=values[k]
                 if not locks.is_empty():locks[idx]=seals[k]
+                if seal_types.size()==64:seal_types[idx]=kinds[k]
             bottom=top-1
 
-static func resolve(tiles: Array[int],locks: Array[int] = []) -> int:
+static func resolve(tiles: Array[int],locks: Array[int] = [],seal_types: Array[int] = []) -> int:
     var total:=0
     for step in range(28):
         var hits:=scan(tiles)
         if hits.is_empty():break
         total+=hits.size()
-        adjacent_obstacles(tiles,locks,hits)
+        adjacent_obstacles(tiles,locks,hits,seal_types)
         for idx in hits:
             tiles[idx]=EMPTY
-        settle(tiles,locks)
+        settle(tiles,locks,seal_types)
     return total
 
 static func legal_moves(tiles: Array[int],locks: Array[int] = []) -> Array[Vector2i]:
@@ -164,10 +184,11 @@ static func certified_solution(world: int,level: int) -> bool:
     if data.is_empty():return false
     var board: Array[int]=data["board"]
     var locks: Array[int]=data["locks"]
-    if board.size()!=64 or locks.size()!=64 or not scan(board).is_empty():
+    var types: Array[int]=data["seal_types"]
+    if board.size()!=64 or locks.size()!=64 or types.size()!=64 or not scan(board).is_empty():
         return false
     var actions: Array=data["solution"]
-    if actions.size()<9:return false
+    if actions.size()<18 or remaining(board)<54:return false
     for pair_data in actions:
         var pair: Array=pair_data
         var a:=int(pair[0])
@@ -176,5 +197,5 @@ static func certified_solution(world: int,level: int) -> bool:
         var v:=board[a]
         board[a]=board[b]
         board[b]=v
-        if resolve(board,locks)<3:return false
+        if resolve(board,locks,types)<3:return false
     return remaining(board)==0

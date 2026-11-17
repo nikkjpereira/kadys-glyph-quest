@@ -7,8 +7,8 @@ const Brand = preload("res://scripts/brand_config.gd")
 const QuestRules = preload("res://scripts/quest_rules.gd")
 const COLS := 8
 const ROWS := 8
-const CELL := 82.0
-const ORIGIN := Vector2(32, 429)
+var CELL := 82.0
+var ORIGIN := Vector2(32, 429)
 const BASE_SIZE := Vector2(720, 1440)
 const LEVEL_COUNT := 12
 const WORLD_NAMES := ["RUNIC HALL", "TEMPLE OF THE SUN", "JADE GARDENS", "ARCANE ARCHIVE"]
@@ -53,6 +53,11 @@ var fall_age := 1.0
 var level := 1
 var board: Array[int] = []
 var locks: Array[int] = []
+var seal_types: Array[int] = []
+var current_relic := ""
+var album_world := 0
+var victory_spark_age := 0.0
+var draw_layout_landscape := false
 var reference_moves := 12
 var boosters_used := 0
 var impact_fx: Array[Dictionary] = []
@@ -138,6 +143,10 @@ func _ready() -> void:
     art["lock"] = load("res://assets/v05/lock.png") as Texture2D
     art["booster_plate"] = load("res://assets/v05/booster_plate.png") as Texture2D
     art["magic_glow"] = load("res://assets/v05/magic_glow.png") as Texture2D
+    for wi in range(4):
+        art["mural_%d" % wi] = load("res://assets/v06/mural_%d.png" % wi) as Texture2D
+        for ri in range(4):
+            art["relic_%d_%d" % [wi,ri]] = load("res://assets/v06/relic_%d_%d.png" % [wi,ri]) as Texture2D
     for i in range(4):
         art["world_%d" % i] = load("res://assets/v03/world_%d.png" % i) as Texture2D
     for i in range(3):
@@ -172,6 +181,8 @@ func _notification(what: int) -> void:
 
 func _process(delta: float) -> void:
     clock += delta
+    if victory_spark_age>0.0:
+        victory_spark_age=maxf(0.0,victory_spark_age-delta)
     if impact_flash > 0.0:
         impact_flash = maxf(0.0, impact_flash-delta*2.1)
         queue_redraw()
@@ -197,7 +208,7 @@ func _process(delta: float) -> void:
         if fall_age >= 0.35:
             fall_ghosts.clear()
         queue_redraw()
-    var tick := int(clock * 17.0)
+    var tick := int(clock * (12.0 if save.pref("reduce_motion") else 30.0))
     if tick != render_tick:
         render_tick = tick
         queue_redraw()
@@ -229,48 +240,65 @@ func _process(delta: float) -> void:
                 popups[idx] = p
         queue_redraw()
 
+func _logical_size() -> Vector2:
+    return Vector2(1600,900) if get_viewport_rect().size.x > get_viewport_rect().size.y*1.35 else BASE_SIZE
+
 func _scale() -> Vector2:
     var s := get_viewport_rect().size
     if s.x <= 0 or s.y <= 0:
         return Vector2.ONE
-    var uniform := minf(s.x / BASE_SIZE.x, s.y / BASE_SIZE.y)
+    var logical:=_logical_size()
+    var uniform := minf(s.x / logical.x, s.y / logical.y)
     return Vector2(uniform,uniform)
 
 func _offset() -> Vector2:
     var s := get_viewport_rect().size
-    return (s - BASE_SIZE * _scale()) * 0.5
+    return (s - _logical_size() * _scale()) * 0.5
 
 func _draw() -> void:
-    # Extend illustration into safe-area margins while keeping gem proportions square.
+    draw_layout_landscape=get_viewport_rect().size.x>get_viewport_rect().size.y*1.35
+    if draw_layout_landscape:
+        CELL=78.0
+        ORIGIN=Vector2(42,143)
+    else:
+        CELL=82.0
+        ORIGIN=Vector2(32,429)
     var bg: Texture2D = scene_bg
-    if state in ["playing","paused","victory","failure","tutorial"] and backgrounds.size() == 4:
-        bg = backgrounds[world_index]
-    if bg != null:
+    if state in ["playing","paused","victory","failure","tutorial"] and backgrounds.size()==4:
+        bg=backgrounds[world_index]
+    if bg!=null:
         draw_texture_rect(bg,Rect2(Vector2.ZERO,get_viewport_rect().size),false)
-    draw_set_transform(_offset(), 0.0, _scale())
-    _background()
-    match state:
-        "menu":
-            _draw_menu()
-        "levels":
-            _draw_levels()
-        "settings":
-            _draw_settings()
-        "progress":
-            _draw_progress()
-        "playing", "paused", "victory", "failure", "tutorial":
-            _draw_game()
-            if state == "paused":
-                _draw_pause()
-            elif state == "victory":
-                _draw_result(true)
-            elif state == "failure":
-                _draw_result(false)
-            elif state == "tutorial":
-                _draw_tutorial()
-        "reset_confirm":
-            _draw_settings()
-            _draw_reset_confirm()
+    draw_set_transform(_offset(),0.0,_scale())
+    if draw_layout_landscape:
+        _background()
+        match state:
+            "playing","paused","victory","failure","tutorial":
+                _draw_tablet_game()
+                if state!="playing":_draw_tablet_overlay()
+            "menu":_draw_tablet_menu()
+            "levels":_draw_tablet_levels()
+            "collection":_draw_tablet_collection()
+            "settings","settings_fx":_draw_tablet_settings()
+            "progress":_draw_tablet_progress()
+            "reset_confirm":_draw_tablet_settings()
+    else:
+        _background()
+        match state:
+            "menu":_draw_menu()
+            "levels":_draw_levels()
+            "settings":_draw_settings()
+            "settings_fx":_draw_effects_settings()
+            "progress":_draw_progress()
+            "collection":_draw_collection()
+            "playing","paused","victory","failure","tutorial":
+                _draw_game()
+                if state=="paused":_draw_pause()
+                elif state=="victory":_draw_result(true)
+                elif state=="failure":_draw_result(false)
+                elif state=="tutorial":_draw_tutorial()
+            "reset_confirm":
+                _draw_settings()
+                _draw_reset_confirm()
     draw_set_transform(Vector2.ZERO)
 
 func _tex(key: String, rect: Rect2, tint: Color = Color.WHITE) -> void:
@@ -283,16 +311,21 @@ func _background() -> void:
     if state in ["playing", "paused", "victory", "failure", "tutorial"]:
         tex = backgrounds[world_index]
     if tex != null:
-        draw_texture_rect(tex, Rect2(0, 0, 720, 1440), false)
+        draw_texture_rect(tex, Rect2(Vector2.ZERO,_logical_size()), false)
     else:
-        draw_rect(Rect2(0, 0, 720, 1440), NAVY)
-    draw_rect(Rect2(0, 0, 720, 1440), Color(0.03, 0.007, 0.05, 0.19))
+        draw_rect(Rect2(Vector2.ZERO,_logical_size()), NAVY)
+    var restoration:=save.world_stage(world_index)
+    var darkening:=maxf(.05,.32-float(restoration)*.065) if state in ["playing","paused","victory","failure","tutorial"] else .11
+    draw_rect(Rect2(Vector2.ZERO,_logical_size()),Color(.03,.007,.05,darkening))
     # Lightweight atmospheric dust, warm lens glow and cold rune shimmer.
-    for i in range(34):
-        var pos := Vector2(11.0 + fposmod(float(i * 211 + 71), 698.0), 22.0 + fposmod(float(i * 293 + 47), 1388.0))
-        var movement := Vector2(sin(clock * 0.31 + float(i)) * 4.5, -fposmod(clock * float(3+i%4), 140.0))
-        var alpha := 0.14 + 0.16 * (0.5 + 0.5*sin(clock * 1.8 + float(i)))
-        draw_circle(pos + movement, 1.0 + float(i % 3) * 0.6, Color(1.0, 0.88, 0.56, alpha))
+    if save.pref("ambient_motion") and not save.pref("reduce_motion"):
+        for i in range(34):
+            var bounds:=_logical_size()
+            var pos := Vector2(11.0 + fposmod(float(i * 211 + 71), bounds.x-20.0), 22.0 + fposmod(float(i * 293 + 47), bounds.y-30.0))
+            var movement := Vector2(sin(clock * 0.31 + float(i)) * 4.5, -fposmod(clock * float(3+i%4), 140.0))
+            var alpha := 0.10 + 0.12*(.5+.5*sin(clock * 1.8+float(i)))
+            var world_color:=GEM_COLORS[(i+world_index)%6] if world_index==3 else Color(1,.88,.59) if world_index==1 else Color(.72,1,.82) if world_index==2 else Color(.7,.85,1)
+            draw_circle(pos+movement,1.0+float(i%3)*.6,Color(world_color.r,world_color.g,world_color.b,alpha))
 
 func _rect(rect: Rect2, color: Color, radius: int = 16, border: Color = Color.TRANSPARENT, bw: int = 0) -> void:
     var style := StyleBoxFlat.new()
@@ -389,7 +422,8 @@ func _draw_menu() -> void:
     _button(Rect2(53, 1081, 613, 68), "CHOOSE A LEVEL", false, 25)
     _button(Rect2(52, 1173, 299, 73), "SETTINGS", false, 25)
     _button(Rect2(369, 1173, 299, 73), "PROGRESS", false, 25)
-    _label("FINITE QUEST + CLASSIC ARCADE  •  v0.5.0", 360, 1343, 17, CREAM, true)
+    _button(Rect2(172, 1267, 376, 70), "RELIC COLLECTION", false, 22)
+    _label("LIVING WORLDS  •  FINITE QUEST + ARCADE  •  v0.6", 360, 1368, 16, CREAM, true)
 
 func _draw_levels() -> void:
     _title("CHOOSE A LEVEL",WORLD_NAMES[world_index])
@@ -455,8 +489,9 @@ func _draw_settings() -> void:
         _rect(Rect2(300,yy-15,maxf(2,292.0*val/100.0),17),Color("#d6a7f9"),8)
         draw_circle(Vector2(300+292.0*val/100.0,yy-7),15,Color("#ffe2a1"))
         _label("%s%%" % val,629,yy+5,17,CREAM,true)
-    _button(Rect2(79,1107,559,73),"RESET SAVED PROGRESS",false,24)
-    _label("Progress and settings are saved automatically.",360,1261,19,CREAM,true)
+    _button(Rect2(79,1090,559,68),"VISUAL EFFECTS & ACCESSIBILITY",false,22)
+    _button(Rect2(79,1172,559,68),"RESET SAVED PROGRESS",false,22)
+    _label("Progress and settings are saved automatically.",360,1282,18,CREAM,true)
     _label("Ads and purchases are disabled in this test version.",360,1307,17,MUTED,true)
 
 func _draw_game() -> void:
@@ -497,6 +532,16 @@ func _draw_game() -> void:
     draw_line(Vector2(181,351),Vector2(510,351),Color(1,1,1,.20),2,true)
     # The rim is behind ALL playable gems; the top row is fully visible.
     _tex("board_frame", Rect2(15, 402, 690, 707))
+    _tex("mural_%d" % world_index,Rect2(ORIGIN,CELL*Vector2(8,8)),Color(1,1,1,.55))
+    _draw_tiles()
+    _label(status_message,360,1140,19,CREAM,true)
+    _draw_booster(0,hints_left,"HINT","booster_0")
+    _draw_booster(1,shuffles_left,"SHUFFLE","booster_2")
+    _draw_booster(2,hammers_left,"HAMMER","booster_1")
+    _draw_booster(3,undo_left,"UNDO","undo")
+    _draw_fx()
+
+func _draw_tiles() -> void:
     for row in range(ROWS):
         for col in range(COLS):
             var idx:=row*COLS+col
@@ -512,7 +557,7 @@ func _draw_game() -> void:
                 _tex("cracked",rect)
                 continue
             if tile==QuestRules.EMPTY:
-                _rect(rect.grow(-13),Color(0.02,0.04,0.1,0.53),8)
+                _rect(rect.grow(-9),Color(.06,.08,.22,.37),8)
                 continue
             if rejected_cells.has(idx):
                 _rect(rect.grow(3),Color(1,.24,.44,.58*(1.0-reject_age)),13)
@@ -530,13 +575,7 @@ func _draw_game() -> void:
             if not hidden:
                 _draw_live_gem(rect,tile,idx)
             if locks.size()==64 and locks[idx]>0:
-                _tex("lock",rect)
-    _label(status_message,360,1140,19,CREAM,true)
-    _draw_booster(0,hints_left,"HINT","booster_0")
-    _draw_booster(1,shuffles_left,"SHUFFLE","booster_2")
-    _draw_booster(2,hammers_left,"HAMMER","booster_1")
-    _draw_booster(3,undo_left,"UNDO","undo")
-    _draw_fx()
+                _draw_seal(rect,idx)
 
 func _draw_fx() -> void:
     var calm := save.pref("reduce_motion")
@@ -681,19 +720,32 @@ func _inside(point: Vector2, x: float, y: float, w: float, h: float) -> bool:
 func _gesture(start: Vector2, finish: Vector2) -> void:
     var p := finish
     _play_sound("tap")
+    if draw_layout_landscape:
+        _gesture_tablet(start,finish)
+        _music_state()
+        queue_redraw()
+        return
     match state:
         "menu": _touch_menu(p)
         "levels": _touch_levels(p)
         "settings": _touch_settings(p)
+        "settings_fx":_touch_effects_settings(p)
         "progress":
             if _inside(p,48,225,154,64):
                 state="menu"
+        "collection":
+            if _inside(p,48,225,154,64):
+                state="menu"
+            else:
+                for w in range(4):
+                    if _inside(p,55+w*155,320,148,78):
+                        album_world=w
         "playing": _touch_game(start,p)
         "paused": _touch_pause(p)
         "victory","failure": _touch_result(p)
         "tutorial":
             if _inside(p,122,840,476,76):
-                save.data["tutorial_done_v05"] = true
+                save.data["tutorial_done_v06"] = true
                 save.mark_tutorial()
                 state="playing"
                 _save_current()
@@ -716,10 +768,12 @@ func _back() -> void:
             _save_current()
         "paused":
             state="playing"
-        "levels","progress":
+        "levels","progress","collection":
             state="menu"
         "settings":
             state=settings_return
+        "settings_fx":
+            state="settings"
         "reset_confirm":
             state="settings"
         "victory","failure":
@@ -764,6 +818,9 @@ func _touch_menu(p: Vector2) -> void:
             state = "settings"
         elif _inside(p, 369, 1173, 299, 73):
             state = "progress"
+        elif _inside(p,172,1267,376,70):
+            album_world=world_index
+            state="collection"
 
 func _touch_levels(p: Vector2) -> void:
     if _inside(p,48,225,144,63):
@@ -797,7 +854,9 @@ func _touch_settings(p: Vector2) -> void:
             save.set_int("music_volume" if i==0 else "sfx_volume",volume)
             _music_state()
             return
-    if _inside(p,79,1107,559,73):
+    if _inside(p,79,1090,559,68):
+        state="settings_fx"
+    elif _inside(p,79,1172,559,68):
         state="reset_confirm"
 
 func _touch_pause(p: Vector2) -> void:
@@ -924,6 +983,8 @@ func _configure_level(w: int, lvl: int) -> void:
     undo_history.clear()
     boosters_used=0
     locks.clear()
+    seal_types.clear()
+    current_relic=""
     impact_fx.clear()
     hammer_mode = false
     selected = -1
@@ -939,7 +1000,7 @@ func _start_level(w: int, lvl: int) -> void:
     _configure_level(w, clampi(lvl, 1, LEVEL_COUNT))
     _create_board()
     start_gems = QuestRules.remaining(board)
-    state = "playing" if bool(save.data.get("tutorial_done_v05", false)) else "tutorial"
+    state = "playing" if bool(save.data.get("tutorial_done_v06", false)) else "tutorial"
     _save_current()
     _reset_idle()
     _music_state()
@@ -953,7 +1014,7 @@ func _resume_saved() -> bool:
     var restored: Array = current.get("board", [])
     if restored.size() != ROWS * COLS:
         return false
-    if int(current.get("board_version", 0)) != 5:
+    if int(current.get("board_version", 0)) != 6:
         # Preserve completed stars, but do not reinterpret old puzzle layouts.
         save.clear_current()
         return false
@@ -968,6 +1029,11 @@ func _resume_saved() -> bool:
     for value in current.get("locks", []):
         locks.append(clampi(int(value),0,2))
     if locks.size()!=64:locks.resize(64);locks.fill(0)
+    seal_types.clear()
+    for value in current.get("seal_types",[]):
+        seal_types.append(clampi(int(value),0,3))
+    if seal_types.size()!=64:seal_types.resize(64);seal_types.fill(0)
+    current_relic=str(current.get("relic",""))
     reference_moves=maxi(1,int(current.get("reference_moves",12)))
     boosters_used=maxi(0,int(current.get("boosters_used",0)))
     score = maxi(0, int(current.get("score", 0)))
@@ -984,7 +1050,7 @@ func _resume_saved() -> bool:
     for item in prior:
         if typeof(item) == TYPE_DICTIONARY and item.get("board", []).size() == 64:
             undo_history.append(item)
-    state = "playing" if bool(save.data.get("tutorial_done_v05", false)) else "tutorial"
+    state = "playing" if bool(save.data.get("tutorial_done_v06", false)) else "tutorial"
     _reset_idle()
     queue_redraw()
     return true
@@ -993,8 +1059,9 @@ func _save_current() -> void:
     if board.size() != ROWS * COLS:
         return
     save.set_current({
-        "mode": mode,"board_version":5,"world": world_index, "level": level, "board": board.duplicate(),
-        "locks":locks.duplicate(),"reference_moves":reference_moves,"boosters_used":boosters_used,
+        "mode": mode,"board_version":6,"world": world_index, "level": level, "board": board.duplicate(),
+        "locks":locks.duplicate(),"seal_types":seal_types.duplicate(),"relic":current_relic,
+        "reference_moves":reference_moves,"boosters_used":boosters_used,
         "score": score, "moves": moves_left, "moves_used": moves_used,
         "start_gems": start_gems, "collected": collected,
         "hints": hints_left, "shuffles": shuffles_left, "hammers": hammers_left,
@@ -1006,6 +1073,8 @@ func _create_board() -> void:
         var scene: Dictionary = QuestRules.generate(world_index, level)
         board = scene["board"].duplicate()
         locks = scene["locks"].duplicate()
+        seal_types=scene["seal_types"].duplicate()
+        current_relic=str(scene["relic"])
         reference_moves = int(scene["min_certified_moves"])
         if not QuestRules.certified_solution(world_index, level):
             push_error("Quest puzzle did not pass the clearing proof.")
@@ -1013,6 +1082,9 @@ func _create_board() -> void:
     # Preserve the original refill-based match-three for optional Arcade Mode.
     locks.resize(64)
     locks.fill(0)
+    seal_types.resize(64)
+    seal_types.fill(0)
+    current_relic=""
     for attempt in range(350):
         board.resize(ROWS * COLS)
         for row in range(ROWS):
@@ -1111,9 +1183,9 @@ func _resolve() -> void:
                 collected += 1
             if sparkles.size() < 350:
                 _emit_fx(idx, GEM_COLORS[board[idx]])
-            if impact_fx.size()<96:
+            if impact_fx.size()<(40 if save.pref("low_effects") else 96):
                 impact_fx.append({"pos":ORIGIN+Vector2((idx%COLS)*CELL+CELL*.5,int(idx/COLS)*CELL+CELL*.5),"life":.72,"color":GEM_COLORS[board[idx]],"tile":board[idx],"index":idx})
-        var result: Dictionary = QuestRules.adjacent_obstacles(board,locks,hits)
+        var result: Dictionary = QuestRules.adjacent_obstacles(board,locks,hits,seal_types)
         for cracked in result["cracked"]:
             _emit_fx(int(cracked),GOLD)
         for unlocked in result["unlocked"]:
@@ -1121,7 +1193,7 @@ func _resolve() -> void:
         _start_fall_animation(hit_map)
         for idx in hits:
             board[idx] = QuestRules.EMPTY
-        QuestRules.settle(board,locks)
+        QuestRules.settle(board,locks,seal_types)
         if mode == "arcade":
             # The refill mechanic is exclusive to Arcade.
             for col in range(COLS):
@@ -1142,7 +1214,7 @@ func _emit_fx(idx: int,clr: Color) -> void:
     if save.pref("reduce_motion"):
         return
     var center:=ORIGIN+Vector2((idx%COLS)*CELL+CELL*.5,int(idx/COLS)*CELL+CELL*.5)
-    for j in range(10):
+    for j in range(4 if save.pref("low_effects") else 10):
         var angle:=randf()*TAU
         sparkles.append({
             "pos":center,"vel":Vector2(cos(angle),sin(angle))*randf_range(75,200),
@@ -1162,7 +1234,8 @@ func _hammer(idx: int) -> void:
     board[idx] = QuestRules.EMPTY
     score += 75
     if locks.size()==64:locks[idx]=0
-    QuestRules.settle(board,locks)
+    if seal_types.size()==64:seal_types[idx]=0
+    QuestRules.settle(board,locks,seal_types)
     boosters_used+=1
     if mode == "arcade":
         for row in range(ROWS):
@@ -1232,6 +1305,7 @@ func _finish_or_save() -> void:
             state="victory"
             status_message="PERFECT CLEAR!"
             save.record_victory(world_index,level,score,earned_stars)
+            victory_spark_age=1.2
             _play_sound("win")
             _vibrate(70)
         elif _find_hint().is_empty():
@@ -1308,7 +1382,8 @@ func _start_arcade(w: int) -> void:
 
 func _snapshot() -> Dictionary:
     return {
-        "board": board.duplicate(),"locks":locks.duplicate(),"boosters_used":boosters_used,
+        "board": board.duplicate(),"locks":locks.duplicate(),"seal_types":seal_types.duplicate(),
+        "boosters_used":boosters_used,
         "score": score, "moves": moves_left, "moves_used": moves_used,
         "collected": collected, "hints": hints_left,
         "shuffles": shuffles_left, "hammers": hammers_left
@@ -1336,6 +1411,10 @@ func _undo_last() -> void:
     for item in last.get("locks",[]):
         locks.append(int(item))
     if locks.size()!=64:locks.resize(64);locks.fill(0)
+    seal_types.clear()
+    for item in last.get("seal_types",[]):
+        seal_types.append(int(item))
+    if seal_types.size()!=64:seal_types.resize(64);seal_types.fill(0)
     boosters_used=int(last.get("boosters_used",0))
     score = int(last["score"])
     moves_left = int(last["moves"])
@@ -1436,3 +1515,305 @@ func _draw_live_gem(rect: Rect2, tile: int, index: int) -> void:
     _label(glyph, rect.get_center().x, rect.position.y + 50, 41, Color("#fff9ec"), true, _glyph_font(tile))
     if save.pref("color_assist"):
         _label(str(tile + 1), rect.position.x + rect.size.x - 13, rect.position.y + 18, 14, Color("#ffedac"), true)
+    if save.pref("gem_shimmer") and not save.pref("reduce_motion") and not save.pref("low_effects"):
+        var shimmer:=pow(maxf(0.0,sin(clock*.95+float(index)*2.37)),9)
+        if shimmer>.12:
+            draw_line(rect.position+Vector2(12,15),rect.position+Vector2(rect.size.x*.55,15),
+                Color(1,.96,.88,shimmer*.43),2.0,true)
+            draw_arc(rect.get_center(),rect.size.x*.43,-.75,.25,18,
+                Color(1,.92,1,shimmer*.34),2.0,true)
+
+
+func _draw_seal(rect: Rect2,idx: int) -> void:
+    var kind: int=seal_types[idx] if seal_types.size()==64 else 1
+    if kind==3:
+        # Frozen rune: solid frosted blue overlay + crystalline fractures.
+        _rect(rect.grow(-4),Color(.45,.88,1,.27),13,Color(.75,.96,1,.85),3)
+        draw_line(rect.position+Vector2(11,10),rect.get_center(),Color(.8,1,1,.75),3,true)
+        draw_line(rect.get_center(),rect.end-Vector2(10,14),Color(.8,1,1,.75),2,true)
+    elif kind==2:
+        # Two-hit chain: crossing gold runic bindings, plus remaining charge.
+        draw_line(rect.position+Vector2(12,10),rect.end-Vector2(12,10),GOLD,5,true)
+        draw_line(rect.position+Vector2(12,rect.size.y-10),rect.position+Vector2(rect.size.x-12,10),GOLD,4,true)
+        _label(str(locks[idx]),rect.end.x-12,rect.position.y+25,18,GOLD,true)
+    else:
+        _tex("lock",rect)
+
+func _draw_collection() -> void:
+    _title("RELIC COLLECTION","Restore each world by completing its quests")
+    _button(Rect2(48,225,154,64),"BACK")
+    for w in range(4):
+        var xx:=47+w*158
+        _button(Rect2(xx,320,146,72),WORLD_SHORT[w],album_world==w,18)
+    _panel(Rect2(40,422,640,785),Color("#2c2048"),true)
+    _fancy(WORLD_NAMES[album_world],360,505,29)
+    var stage: int=save.world_stage(album_world)
+    _label("WORLD RESTORATION: %s / 4" % stage,360,558,23,CREAM,true)
+    _rect(Rect2(100,578,520,18),Color("#322745"),8)
+    _rect(Rect2(100,578,130.0*stage,18),Color("#4adbef"),8)
+    for i in range(4):
+        var xx:=88+(i%2)*284
+        var yy:=635+int(i/2)*242
+        var owned: bool=save.has_relic(album_world,i)
+        var tint:=Color.WHITE if owned else Color(.2,.18,.32,.7)
+        _tex("relic_%d_%d" % [album_world,i],Rect2(xx,yy,190,176),tint)
+        var entries: Array=JSON.parse_string(FileAccess.get_file_as_string("res://data/levels_v06.json")).get("relics",[])
+        var title: String=str(entries[album_world][i]) if entries.size()>album_world else "ANCIENT RELIC"
+        _label(title if owned else "MISSING RELIC",xx+93,yy+193,17,GOLD if owned else MUTED,true)
+        _label("COMPLETE LEVEL %s" % ((i+1)*3),xx+93,yy+217,16,CREAM,true)
+    _label("RELICS: %s / 16  •  COMPLETION RESTORES THE WORLD" % save.relic_total(),360,1314,18,GOLD,true)
+
+func _draw_tablet_game() -> void:
+    _tex("board_frame",Rect2(17,111,679,697))
+    _tex("mural_%d" % world_index,Rect2(ORIGIN,Vector2(CELL*8,CELL*8)),Color(1,1,1,.62))
+    _draw_tiles()
+    # Landscape HUD independent from board scale, with a usable right column.
+    _draw_logo(855,7,600,188)
+    _rect(Rect2(705,121,88,69),Color("#352151"),12,GOLD,3)
+    _label("HOME",749,165,19,CREAM,true)
+    _rect(Rect2(1470,124,87,69),Color("#352151"),12,GOLD,3)
+    _label("II",1514,166,28,CREAM,true)
+    _tex("ribbon",Rect2(825,198,611,78))
+    _label("LEVEL %s  •  %s" % [level,WORLD_SHORT[world_index]] if mode=="quest" else "ARCADE  •  %s" % WORLD_SHORT[world_index],1136,248,26,INK,true,display_font)
+    _tex("medallion",Rect2(799,289,282,90))
+    _tex("medallion",Rect2(1152,289,282,90))
+    _label("SCORE",940,317,19,CREAM,true)
+    _fancy(str(score),940,356,32)
+    _label("MOVES",1290,317,19,CREAM,true)
+    _fancy(str(moves_used) if mode=="quest" else str(moves_left),1290,356,32)
+    _tex("parchment",Rect2(803,387,638,137))
+    _label("CLEAR THE BOARD" if mode=="quest" else "ARCADE OBJECTIVE",1119,441,27,INK,true,display_font)
+    var amount:=start_gems-QuestRules.remaining(board) if mode=="quest" else score
+    var target:=start_gems if mode=="quest" else score_target
+    _rect(Rect2(885,466,397,21),Color("#3b3852"),12)
+    _rect(Rect2(885,466,maxf(4.0,397.0*float(amount)/maxf(1.0,float(target))),21),Color("#41d7f3"),12)
+    _label("%s / %s" % [amount,target],1373,484,20,INK,true)
+    _label(status_message,1159,577,19,CREAM,true)
+    for i in range(4):
+        var bx:=801+(i%4)*174
+        _tex("booster_plate",Rect2(bx,630,159,167))
+        var key:=["booster_0","booster_2","booster_1","undo"][i]
+        var count: int=[hints_left,shuffles_left,hammers_left,undo_left][i]
+        _tex(key,Rect2(bx+33,640,95,94),Color.WHITE if count>0 else Color(.5,.5,.5,.85))
+        _label(str(count),bx+138,666,22,GOLD,true)
+        _label(["HINT","SHUFFLE","HAMMER","UNDO"][i],bx+79,777,16,CREAM,true)
+    _label("WORLD RESTORED: %s / 4   •   RELICS: %s / 4" % [save.world_stage(world_index),int(save.relic_total()/4)],1120,858,19,GOLD,true)
+    _draw_fx()
+
+func _draw_tablet_menu() -> void:
+    _draw_logo(490,12,620,224)
+    _fancy("CHOOSE YOUR WORLD",800,274,32)
+    for i in range(4):
+        var xx:=50+i*384
+        _panel(Rect2(xx,305,356,323),Color("#392551") if i==world_index else Color("#261b45"),true)
+        _tex("world_%d" % i,Rect2(xx+42,337,269,191))
+        _fancy(WORLD_SHORT[i],xx+178,567,26)
+        _label("LEVEL %s/12 • RESTORED %s/4" % [save.unlocked_level(i),save.world_stage(i)],xx+178,603,17,CREAM,true)
+    _button(Rect2(390,664,400,67),"QUEST MODE",mode=="quest",26)
+    _button(Rect2(818,664,400,67),"ARCADE MODE",mode=="arcade",26)
+    _button(Rect2(384,748,834,78),"CONTINUE ADVENTURE",true,33)
+    _button(Rect2(57,820,350,63),"LEVELS",false,22)
+    _button(Rect2(431,820,350,63),"SETTINGS",false,22)
+    _button(Rect2(805,820,350,63),"PROGRESS",false,22)
+    _button(Rect2(1178,820,350,63),"RELICS",false,22)
+
+func _draw_tablet_levels() -> void:
+    _title("CHOOSE A LEVEL",WORLD_SHORT[world_index])
+    _button(Rect2(40,28,200,72),"BACK",false,24)
+    for lvl in range(1,13):
+        var xx:=275+((lvl-1)%6)*206
+        var yy:=190+int((lvl-1)/6)*280
+        var unlocked:=lvl<=save.unlocked_level(world_index)
+        _panel(Rect2(xx,yy,180,215),Color("#402a62") if unlocked else Color("#272039"),true)
+        _fancy(str(lvl),xx+90,yy+116,56)
+        _label("★".repeat(int(save.best_result(world_index,lvl).get("stars",0))) if unlocked else "LOCKED",xx+90,yy+174,19,GOLD,true)
+
+func _draw_tablet_collection() -> void:
+    _fancy("THE RELIC COLLECTION",800,82,48)
+    _button(Rect2(50,30,200,75),"BACK")
+    for w in range(4):
+        _button(Rect2(360+w*288,129,269,72),WORLD_SHORT[w],w==album_world,20)
+    _label("WORLD RESTORATION: %s / 4" % save.world_stage(album_world),800,254,30,GOLD,true)
+    for i in range(4):
+        var xx:=125+i*375
+        var owned:=save.has_relic(album_world,i)
+        _tex("relic_%d_%d" % [album_world,i],Rect2(xx,324,305,315),Color.WHITE if owned else Color(.3,.3,.4,.75))
+        _label("RESTORED" if owned else "LOCKED",xx+153,685,25,GOLD if owned else MUTED,true)
+        _label("LEVEL %s" % ((i+1)*3),xx+153,736,22,CREAM,true)
+
+func _draw_tablet_progress() -> void:
+    _fancy("YOUR ADVENTURE",800,93,47)
+    _button(Rect2(50,30,200,75),"BACK")
+    for w in range(4):
+        var x:=80+w*375
+        _tex("world_%d" % w,Rect2(x,240,308,280))
+        _fancy(WORLD_SHORT[w],x+153,569,26)
+        _label("LEVEL %s / 12" % save.unlocked_level(w),x+153,615,21,CREAM,true)
+        _label("RESTORATION %s / 4" % save.world_stage(w),x+153,666,20,GOLD,true)
+    _label("TOTAL STARS: %s     •     RELICS: %s / 16" % [save.total_stars(),save.relic_total()],800,808,30,GOLD,true)
+
+func _draw_tablet_settings() -> void:
+    _fancy("SETTINGS",800,85,49)
+    _button(Rect2(50,26,205,75),"BACK")
+    var keys:=["music","sfx","haptics","reduce_motion","color_assist","auto_hints","large_text",
+    "ambient_motion","gem_shimmer","reactive_light","screen_shake","low_effects"]
+    var labels:=["MUSIC","SOUND EFFECTS","VIBRATION","REDUCE MOTION","HIGH CONTRAST","AUTO HINTS","LARGE TEXT",
+    "AMBIENT MOTION","GEM SHIMMER","REACTIVE LIGHT","SCREEN SHAKE","LOW EFFECTS"]
+    for i in range(keys.size()):
+        var x:=110+int(i/6)*720
+        var y:=168+(i%6)*111
+        _panel(Rect2(x,y,665,92),Color("#33214d"),false)
+        _label(labels[i],x+31,y+56,22,CREAM)
+        _rect(Rect2(x+522,y+17,119,61),Color("#396c59") if save.pref(keys[i]) else Color("#4c3450"),17,GOLD,2)
+        _label("ON" if save.pref(keys[i]) else "OFF",x+582,y+56,21,CREAM,true)
+    _label("MUSIC VOLUME: %s%%       EFFECTS VOLUME: %s%%" % [save.setting_int("music_volume"),save.setting_int("sfx_volume")],800,864,22,GOLD,true)
+
+func _draw_tablet_overlay() -> void:
+    _rect(Rect2(0,0,1600,900),Color(.02,.01,.07,.78),0)
+    _panel(Rect2(457,107,686,705),Color("#32214c"),true)
+    if state=="paused":
+        _fancy("QUEST PAUSED",800,214,45)
+        _button(Rect2(555,270,490,92),"RESUME",true,31)
+        _button(Rect2(555,391,490,92),"SETTINGS",false,29)
+        _button(Rect2(555,512,490,92),"SAVE & HOME",false,29)
+    elif state=="tutorial":
+        _fancy("HOW TO PLAY",800,214,41)
+        _label("MATCH THREE. CLEAR EVERY GEM.",800,310,25,CREAM,true)
+        _label("NO NEW GEMS IN QUEST MODE.",800,367,24,GOLD,true)
+        _label("WATCH FOR CRACKED STONES AND SEALED GEMS.",800,423,21,CREAM,true)
+        _button(Rect2(560,548,480,93),"BEGIN QUEST",true,29)
+    else:
+        _fancy("PERFECT CLEAR!" if state=="victory" else "NO MATCHES LEFT",800,215,43)
+        _label("★".repeat(earned_stars) if state=="victory" else "TRY AGAIN",800,302,48,GOLD,true)
+        _label("SCORE %s   •   MOVES %s" % [score,moves_used],800,380,23,CREAM,true)
+        _button(Rect2(550,438,500,88),"NEXT LEVEL" if state=="victory" else "RETRY",true,29)
+        _button(Rect2(550,547,500,88),"HOME",false,26)
+
+func _gesture_tablet(start:Vector2,p:Vector2) -> void:
+    match state:
+        "menu":
+            for i in range(4):
+                if _inside(p,50+i*384,305,356,323):
+                    world_index=i
+                    return
+            if _inside(p,390,664,400,67):
+                mode="quest";save.data["mode"]=mode;save.save_all()
+            elif _inside(p,818,664,400,67):
+                mode="arcade";save.data["mode"]=mode;save.save_all()
+            elif _inside(p,384,748,834,78):
+                var current:Dictionary=save.data.get("current",{})
+                if current.get("mode","")==mode and int(current.get("world",-1))==world_index and _resume_saved():
+                    return
+                _start_level(world_index,save.unlocked_level(world_index) if mode=="quest" else 1)
+            elif _inside(p,57,820,350,63):
+                state="levels"
+            elif _inside(p,431,820,350,63):
+                settings_return="menu";state="settings"
+            elif _inside(p,805,820,350,63):
+                state="progress"
+            elif _inside(p,1178,820,350,63):
+                album_world=world_index;state="collection"
+        "playing":
+            if _inside(p,705,121,88,69):
+                _save_current();state="menu";return
+            if _inside(p,1470,124,87,69):
+                _save_current();state="paused";return
+            for i in range(4):
+                if _inside(p,801+i*174,630,159,167):
+                    match i:
+                        0:
+                            if hints_left>0:
+                                hints_left-=1;boosters_used+=1;_show_hint();_save_current()
+                        1:_shuffle()
+                        2:
+                            hammer_mode=not hammer_mode
+                            status_message="Select a gem to smash" if hammer_mode else "Hammer cancelled"
+                        3:_undo_last()
+                    return
+            _tablet_touch_board(start,p)
+        "paused":
+            if _inside(p,555,270,490,92):state="playing"
+            elif _inside(p,555,391,490,92):settings_return="paused";state="settings"
+            elif _inside(p,555,512,490,92):_save_current();state="menu"
+        "victory","failure":
+            if _inside(p,550,438,500,88):
+                if mode=="arcade":_start_arcade(world_index)
+                elif state=="victory":_start_level(world_index,mini(12,level+1))
+                else:_start_level(world_index,level)
+            elif _inside(p,550,547,500,88):state="menu"
+        "tutorial":
+            if _inside(p,560,548,480,93):
+                save.data["tutorial_done_v06"]=true
+                save.mark_tutorial()
+                state="playing"
+                _save_current()
+        "levels":
+            if _inside(p,40,28,200,72):state="menu";return
+            for i in range(12):
+                var xx:=275+(i%6)*206
+                var yy:=190+int(i/6)*280
+                if _inside(p,xx,yy,180,215) and i+1<=save.unlocked_level(world_index):
+                    _start_level(world_index,i+1);return
+        "collection":
+            if _inside(p,50,30,200,75):state="menu"
+            else:
+                for w in range(4):
+                    if _inside(p,360+w*288,129,269,72):album_world=w
+        "progress":
+            if _inside(p,50,30,200,75):state="menu"
+        "settings","settings_fx":
+            if _inside(p,50,26,205,75):
+                state=settings_return
+            else:
+                var keys:=["music","sfx","haptics","reduce_motion","color_assist","auto_hints","large_text",
+                    "ambient_motion","gem_shimmer","reactive_light","screen_shake","low_effects"]
+                for i in range(keys.size()):
+                    var x:=110+int(i/6)*720
+                    var y:=168+(i%6)*111
+                    if _inside(p,x,y,665,92):
+                        save.toggle_pref(keys[i]);return
+        "reset_confirm":
+            state="settings"
+
+func _tablet_touch_board(start:Vector2,p:Vector2) -> void:
+    if fall_age<.26:return
+    var first:=_board_index(start)
+    if first<0:return
+    if hammer_mode:
+        hammer_mode=false
+        _hammer(first)
+        return
+    var second:=_board_index(p)
+    var delta:=p-start
+    if delta.length()>=25 and (second==first or second<0):
+        if absf(delta.x)>absf(delta.y):
+            second=_neighbor(first,1 if delta.x>0 else -1,0)
+        else:
+            second=_neighbor(first,0,1 if delta.y>0 else -1)
+    if second>=0 and second!=first and _adjacent(first,second):
+        selected=-1;_attempt_swap(first,second)
+    elif selected>=0 and selected!=first and _adjacent(selected,first):
+        _attempt_swap(selected,first);selected=-1
+    else:selected=-1 if selected==first else first
+
+func _draw_effects_settings() -> void:
+    _title("MAGICAL EFFECTS","Choose how much motion and lighting you want")
+    _button(Rect2(48,223,154,67),"BACK")
+    _panel(Rect2(53,310,614,835),Color("#312348"),true)
+    var keys:=["ambient_motion","gem_shimmer","reactive_light","screen_shake","low_effects"]
+    var labels:=["AMBIENT WORLD MOTION","GEMSTONE SHIMMER","MATCH REACTIVE LIGHT","SCREEN SHAKE","LOW EFFECTS PROFILE"]
+    for i in range(keys.size()):
+        var yy:=370+i*135
+        _label(labels[i],83,yy,21,CREAM)
+        _rect(Rect2(503,yy-38,121,56),Color("#396c59") if save.pref(keys[i]) else Color("#513551"),16,GOLD,2)
+        _label("ON" if save.pref(keys[i]) else "OFF",563,yy-1,22,CREAM,true)
+        draw_line(Vector2(84,yy+51),Vector2(623,yy+51),Color("#97749f"),1)
+    _label("Reduce Motion overrides extra animation.",360,1072,19,GOLD,true)
+
+func _touch_effects_settings(p:Vector2) -> void:
+    if _inside(p,48,223,154,67):
+        state="settings";return
+    var keys:=["ambient_motion","gem_shimmer","reactive_light","screen_shake","low_effects"]
+    for i in range(keys.size()):
+        if _inside(p,75,326+i*135,565,101):
+            save.toggle_pref(keys[i]);return

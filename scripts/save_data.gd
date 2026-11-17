@@ -11,7 +11,12 @@ const DEFAULT_PREFS := {
     "auto_hints": true,
     "large_text": false,
     "music_volume": 85,
-    "sfx_volume": 85
+    "sfx_volume": 85,
+    "ambient_motion": true,
+    "gem_shimmer": true,
+    "reactive_light": true,
+    "screen_shake": false,
+    "low_effects": false
 }
 var data: Dictionary = {}
 
@@ -20,11 +25,14 @@ func _init() -> void:
 
 func reset_defaults() -> void:
     data = {
-        "schema": 2,
+        "schema": 3,
         "mode": "quest",
         "arcade_best": 0,
         "tutorial_done_v04": false,
         "levels": {},
+        "relics": {},
+        "restoration": [0,0,0,0],
+        "tutorial_done_v06": false,
         "unlocked": [1, 1, 1, 1],
         "prefs": DEFAULT_PREFS.duplicate(true),
         "current": {},
@@ -45,12 +53,15 @@ func load_all() -> void:
     if typeof(parsed) != TYPE_DICTIONARY:
         push_warning("Invalid save data; starting fresh")
         return
-    if int(parsed.get("schema", 0)) != 2:
+    if int(parsed.get("schema", 0)) not in [2,3]:
         return
     var incoming: Dictionary = parsed
     for key in data.keys():
         if incoming.has(key):
             data[key] = incoming[key]
+    # Completed stars, unlocks and settings migrate; obsolete in-progress
+    # boards are re-created when the player starts v0.6.
+    data["schema"]=3
     if typeof(data["prefs"]) != TYPE_DICTIONARY:
         data["prefs"] = DEFAULT_PREFS.duplicate(true)
     for key in DEFAULT_PREFS:
@@ -62,6 +73,16 @@ func load_all() -> void:
         data["current"] = {}
     if typeof(data["unlocked"]) != TYPE_ARRAY or data["unlocked"].size() != 4:
         data["unlocked"] = [1, 1, 1, 1]
+    if typeof(data["relics"])!=TYPE_DICTIONARY:data["relics"]={}
+    if typeof(data["restoration"])!=TYPE_ARRAY or data["restoration"].size()!=4:
+        data["restoration"]=[0,0,0,0]
+    for w in range(4):
+        var completed:=0
+        for lvl in range(1,13):
+            if int(best_result(w,lvl).get("stars",0))>0:completed+=1
+        data["restoration"][w]=maxi(int(data["restoration"][w]),mini(4,int(completed/3)))
+        for k in range(int(completed/3)):
+            data["relics"]["%s-%s" % [w,k]]=true
 
 func save_all() -> bool:
     var file := FileAccess.open(TEMP, FileAccess.WRITE)
@@ -110,9 +131,26 @@ func record_victory(world: int, level: int, score: int, stars: int) -> void:
         "stars": maxi(int(old.get("stars", 0)), stars)
     }
     data["unlocked"][world] = maxi(unlocked_level(world), mini(12, level + 1))
+    # Four illustrated artifact milestones per world (3, 6, 9, 12).
+    var milestones := 0
+    for lvl in range(1,13):
+        if int(best_result(world,lvl).get("stars",0))>0:milestones+=1
+    var stage:=mini(4,int(milestones/3))
+    data["restoration"][world]=maxi(int(data["restoration"][world]),stage)
+    for k in range(stage):
+        data["relics"]["%s-%s" % [world,k]]=true
     data["total_stars"] = total_stars()
     data["current"] = {}
     save_all()
+
+func world_stage(world:int)->int:
+    return clampi(int(data.get("restoration",[0,0,0,0])[world]),0,4)
+
+func has_relic(world:int,slot:int)->bool:
+    return bool(data.get("relics",{}).get("%s-%s" % [world,slot],false))
+
+func relic_total()->int:
+    return data.get("relics",{}).size()
 
 func total_stars() -> int:
     var sum := 0

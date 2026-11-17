@@ -7,6 +7,8 @@ func fail(reason:String,world:int=-1,level:int=-1) -> void:
     push_error("SMOKE FAIL: %s (%s-%s)" % [reason,world,level])
     quit(1)
 func _run() -> void:
+    var ice_count:=0
+    var chain_count:=0
     var min_steps:=999
     var max_steps:=0
     var cracked_levels:=0
@@ -20,12 +22,22 @@ func _run() -> void:
                 fail("Puzzle dimensions invalid",world,level);return
             if QuestRules.remaining(tiles)!=int(scene["gem_count"]) or not QuestRules.scan(tiles).is_empty():
                 fail("Puzzle count mismatch/pre-matches",world,level);return
+            var types: Array[int]=scene["seal_types"]
+            if types.size()!=64:
+                fail("Seal type array malformed",world,level);return
+            if QuestRules.remaining(tiles)<54 or QuestRules.remaining(tiles)>60:
+                fail("Starting board not dense",world,level);return
+            var count_top:=0
+            for v in tiles.slice(0,8):
+                if v>=0:count_top+=1
+            if count_top<2:
+                fail("Too many empty cells at top",world,level);return
             if QuestRules.legal_moves(tiles,seals).is_empty():
                 fail("Puzzle has no initial legal move",world,level);return
             if not QuestRules.certified_solution(world,level):
                 fail("Booster-free full clear not certified",world,level);return
             var steps:=int(scene["min_certified_moves"])
-            if steps<9:
+            if steps<18:
                 fail("Puzzle is still trivially short",world,level);return
             min_steps=mini(min_steps,steps)
             max_steps=maxi(max_steps,steps)
@@ -35,14 +47,16 @@ func _run() -> void:
                 if v==QuestRules.CRACK:cracked_levels+=1
             if obstacles>5:
                 fail("Too many stone blockers",world,level);return
-            for v in seals:
-                if v>0:locked_levels+=1
-    if max_steps<17 or locked_levels<10 or cracked_levels<2:
+            for i in range(types.size()):
+                if seals[i]>0:locked_levels+=1
+                if types[i]==2:chain_count+=1
+                if types[i]==3:ice_count+=1
+    if max_steps<19 or locked_levels<10 or cracked_levels<2 or chain_count<4 or ice_count<4:
         fail("Missing advanced layouts/obstacles");return
     var game=load("res://scenes/Main.tscn").instantiate()
     root.add_child(game)
     game.save.reset_progress()
-    game.save.data["tutorial_done_v05"]=true
+    game.save.data["tutorial_done_v06"]=true
     game.mode="quest"
     if game.world_tracks.size()!=5:
         fail("Missing original world soundtracks");return
@@ -134,6 +148,16 @@ func _run() -> void:
     game._attempt_swap(hint[0],hint[1])
     if QuestRules.remaining(game.board)!=64:
         fail("Arcade no longer replenishes");return
+    game.save.record_victory(0,3,1200,3)
+    if not game.save.has_relic(0,0) or game.save.world_stage(0)<1:
+        fail("Relic and world restoration milestones failed");return
+    if game.save.relic_total()<1:
+        fail("Relic count failed");return
+    game.save.toggle_pref("ambient_motion")
+    var loaded_settings=SaveData.new()
+    loaded_settings.load_all()
+    if loaded_settings.pref("ambient_motion")!=game.save.pref("ambient_motion"):
+        fail("Visual effects setting not persisted");return
     game.save.reset_progress()
-    print("PASS: V0.5 CERTIFIED PUZZLES: 48 levels, %s-%s proven steps, locks, cracked blocks, distinct audio, animations, no-refill, undo, shuffle, save, arcade" % [min_steps,max_steps])
+    print("PASS: V0.6 DENSE WORLDS: 48 levels, %s-%s certified moves, ice/chain/cracked stone, artifacts, restoration, FX prefs, no refill, undo, saves, arcade" % [min_steps,max_steps])
     quit(0)
