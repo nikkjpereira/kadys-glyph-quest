@@ -73,6 +73,12 @@ jobs:
           test -s build/visual/tablet_landscape_menu.png
           test -s build/visual/relic_collection.png
 
+      - name: Capture portrait and landscape tablet layouts
+        run: |
+          timeout 75s xvfb-run -a -s "-screen 0 2200x2200x24" godot --path . --resolution 1920x1200 --rendering-method gl_compatibility --script res://tools/capture_tablets.gd
+          test -s build/visual/tablet_landscape.png
+          test -s build/visual/tablet_portrait.png
+
       - name: Upload visual QA screenshots
         if: always()
         uses: actions/upload-artifact@v4
