@@ -671,9 +671,10 @@ func _draw_tiles() -> void:
                 _draw_seal(rect,idx)
 
 func _draw_star_checkpoints(bar: Rect2,ratio: float) -> void:
-    for threshold in [.75,.85,1.0]:
-        var x:=bar.position.x+bar.size.x*threshold
-        var earned:=ratio>=threshold-.00001
+    for threshold_value in [0.75,0.85,1.0]:
+        var threshold:float=float(threshold_value)
+        var x:float=bar.position.x+bar.size.x*threshold
+        var earned:bool=ratio>=threshold-.00001
         var gold:Color=Color(.99,.81,.43,.96 if earned else .42)
         draw_line(Vector2(x,bar.position.y-3),Vector2(x,bar.end.y+3),gold,2.5,true)
         if earned and threshold_flash_age>0.0:
