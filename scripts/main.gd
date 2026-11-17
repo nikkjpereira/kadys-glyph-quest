@@ -324,7 +324,7 @@ func _background() -> void:
             var pos := Vector2(11.0 + fposmod(float(i * 211 + 71), bounds.x-20.0), 22.0 + fposmod(float(i * 293 + 47), bounds.y-30.0))
             var movement := Vector2(sin(clock * 0.31 + float(i)) * 4.5, -fposmod(clock * float(3+i%4), 140.0))
             var alpha := 0.10 + 0.12*(.5+.5*sin(clock * 1.8+float(i)))
-            var world_color:=GEM_COLORS[(i+world_index)%6] if world_index==3 else Color(1,.88,.59) if world_index==1 else Color(.72,1,.82) if world_index==2 else Color(.7,.85,1)
+            var world_color: Color=GEM_COLORS[(i+world_index)%6] if world_index==3 else Color(1,.88,.59) if world_index==1 else Color(.72,1,.82) if world_index==2 else Color(.7,.85,1)
             draw_circle(pos+movement,1.0+float(i%3)*.6,Color(world_color.r,world_color.g,world_color.b,alpha))
 
 func _rect(rect: Rect2, color: Color, radius: int = 16, border: Color = Color.TRANSPARENT, bw: int = 0) -> void:
@@ -1592,7 +1592,7 @@ func _draw_tablet_game() -> void:
     for i in range(4):
         var bx:=801+(i%4)*174
         _tex("booster_plate",Rect2(bx,630,159,167))
-        var key:=["booster_0","booster_2","booster_1","undo"][i]
+        var key: String=["booster_0","booster_2","booster_1","undo"][i]
         var count: int=[hints_left,shuffles_left,hammers_left,undo_left][i]
         _tex(key,Rect2(bx+33,640,95,94),Color.WHITE if count>0 else Color(.5,.5,.5,.85))
         _label(str(count),bx+138,666,22,GOLD,true)
