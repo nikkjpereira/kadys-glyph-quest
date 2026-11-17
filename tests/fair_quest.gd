@@ -61,12 +61,13 @@ func _run() -> void:
     # 85% partial win without playing any more moves.
     game._start_level(0,3)
     var stones:=0
+    var allowed_left:=floori(float(game.start_gems)*0.15)
     for i in range(game.board.size()):
         if game.board[i]>=0:
-            if stones>=9:
+            if stones>=allowed_left:
                 game.board[i]=Rules.EMPTY
             stones+=1
-    if Rules.remaining(game.board)!=9:
+    if Rules.remaining(game.board)!=allowed_left or Progress.stars(game.start_gems,allowed_left)!=2:
         fail("85% fixture incorrect");return
     game._claim_qualified()
     if game.state!="victory" or game.earned_stars!=2:
