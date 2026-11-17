@@ -59,6 +59,12 @@ jobs:
           grep -q "PASS: V0.6.2 FAIR QUEST" build/fair_quest.log
           if grep -E "SCRIPT ERROR|FAIR QUEST FAIL" build/fair_quest.log; then exit 1; fi
 
+      - name: v0.7 graphics materials, restoration and accessibility tests
+        run: |
+          timeout 45s godot --headless --path . --script res://tests/visuals_v07.gd 2>&1 | tee build/visuals_v07.log
+          grep -q "PASS: V0.7 VISUAL FX" build/visuals_v07.log
+          if grep -E "SCRIPT ERROR|V07 VISUAL FAIL" build/visuals_v07.log; then exit 1; fi
+
       - name: Capture actual Godot screens for visual QA
         run: |
           mkdir -p build/visual
@@ -88,11 +94,19 @@ jobs:
           test -s build/visual/tablet_landscape.png
           test -s build/visual/tablet_portrait.png
 
+      - name: Render four enhanced worlds, shards and accessibility profiles
+        run: |
+          timeout 125s xvfb-run -a -s "-screen 0 2400x2600x24" godot --path . --resolution 720x1440 --rendering-method gl_compatibility --script res://tools/capture_v07.gd 2>&1 | tee build/capture_v07.log
+          grep -q "PASS: V0.7 RENDER" build/capture_v07.log
+          for file in v07_runes_restored v07_egypt_restored v07_asia_restored v07_mixed_restored v07_shards_and_match v07_low_fx v07_tablet_landscape_restored v07_tablet_portrait_restored; do
+            test -s "build/visual/$file.png"
+          done
+
       - name: Upload visual QA screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Runefall-Visual-v0.6.2
+          name: Runefall-Visual-v0.7.0
           path: build/visual/*.png
           if-no-files-found: ignore
           retention-days: 30
@@ -119,12 +133,12 @@ jobs:
           GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
         run: |
           cp "$RUNNER_TEMP/kady-debug.keystore" /tmp/kady-debug.keystore
-          godot --headless --path . --export-debug "Android" build/runefall-v0.6.2-debug.apk
-          test -s build/runefall-v0.6.2-debug.apk
+          godot --headless --path . --export-debug "Android" build/runefall-v0.7.0-debug.apk
+          test -s build/runefall-v0.7.0-debug.apk
 
       - name: Add legacy and modern APK signatures
         run: |
-          APK="build/runefall-v0.6.2-debug.apk"
+          APK="build/runefall-v0.7.0-debug.apk"
           "$ANDROID_HOME/build-tools/35.0.1/apksigner" sign \
             --ks "$RUNNER_TEMP/kady-debug.keystore" \
             --ks-key-alias androiddebugkey \
@@ -137,7 +151,7 @@ jobs:
 
       - name: Verify APK signatures and Android metadata
         run: |
-          APK="build/runefall-v0.6.2-debug.apk"
+          APK="build/runefall-v0.7.0-debug.apk"
           "$ANDROID_HOME/build-tools/35.0.1/apksigner" verify --verbose --print-certs "$APK" | tee build/signatures.txt
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' build/signatures.txt
           grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' build/signatures.txt
@@ -169,13 +183,13 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: |
-            adb install --no-incremental build/runefall-v0.6.2-debug.apk
+            adb install --no-incremental build/runefall-v0.7.0-debug.apk
             adb shell pm path com.nefariousmedia.kadysglyphquest
 
       - name: Make APK available to testers
         uses: actions/upload-artifact@v4
         with:
-          name: Runefall-Android-v0.6.2
-          path: build/runefall-v0.6.2-debug.apk
+          name: Runefall-Android-v0.7.0
+          path: build/runefall-v0.7.0-debug.apk
           if-no-files-found: error
           retention-days: 30

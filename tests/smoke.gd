@@ -45,7 +45,7 @@ func _run()->void:
     if ice_total<8 or chain_total<6 or cracked_total<6:
         fail("new obstacles missing");return
     var brand=load("res://scripts/brand_config.gd")
-    if brand.DISPLAY_NAME!="Runefall" or brand.VERSION!="0.6.2":
+    if brand.DISPLAY_NAME!="Runefall" or brand.VERSION!="0.7.0":
         fail("Runefall branding metadata mismatch");return
     var game=load("res://scenes/Main.tscn").instantiate()
     root.add_child(game)

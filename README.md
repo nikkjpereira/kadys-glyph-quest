@@ -1,8 +1,18 @@
 # Runefall
 
-**v0.6.2: Fair Quest Update** · Godot 4.7.2 · Android · Offline
+**v0.7.0: Living Gems + Restored Worlds Update** · Godot 4.7.2 · Android · Offline
 
 A gemstone-and-glyph match-3 adventure with four themed worlds: Runes, Egypt, East Asia, and Mixed. The new visual identity is **Runefall** with the tagline **Match. Discover. Awaken.**. The internal package ID is intentionally unchanged for continuity.
+
+## New visuals in v0.7.0
+
+- Six newly generated 256px multi-faceted gemstone materials with colored beveled edges, glass highlights and internal caustics.
+- Animated crystalline refractions, gold sparkle stars, impact shockwaves, colored crystal shards and local board lighting.
+- New restoration scenery for **all 4 worlds at 5 stages each** (20 atmosphere scenes), with world-specific torch/light, desert dust, falling blossoms and arcane motes.
+- A more responsive movement feel with smooth falling spring easing, opt-in micro-shake, glowing threshold markers and animated victory stars.
+- Existing Reduce Motion, Low Effects, Gem Shimmer, Reactive Light and Ambient Motion settings control the v0.7 effects.
+- Existing levels, 75/85/100% Quest win rules, Arcade gameplay, music, relics and saved-progress schema stay unchanged.
+- For technical and playtest details, see [v0.7.0 release notes](docs/v0.7.0-release-notes.md).
 
 ## Fair Quest in v0.6.2
 

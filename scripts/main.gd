@@ -1,11 +1,12 @@
 extends Node2D
-## Runefall v0.6.2: responsive, finite match-3 with relics and world restoration.
+## Runefall v0.7.0: responsive, finite match-3 with relics and world restoration.
 ## Keep play fully functional offline. No ads or billing in test releases.
 
 const SaveData = preload("res://scripts/save_data.gd")
 const Brand = preload("res://scripts/brand_config.gd")
 const QuestRules = preload("res://scripts/quest_rules.gd")
 const QuestProgress=preload("res://scripts/quest_progress.gd")
+const V07Visuals=preload("res://scripts/v07_visual_math.gd")
 const COLS := 8
 const ROWS := 8
 var CELL := 82.0
@@ -58,6 +59,7 @@ var seal_types: Array[int] = []
 var current_relic := ""
 var album_world := 0
 var victory_spark_age := 0.0
+var threshold_flash_age := 0.0
 var draw_layout_landscape := false
 var draw_layout_tablet_portrait := false
 var reference_moves := 12
@@ -133,7 +135,7 @@ func _ready() -> void:
                 f = loaded
         glyph_fonts.append(f)
     for i in range(6):
-        gems.append(load("res://assets/v03/gem_%s.png" % i) as Texture2D)
+        gems.append(load("res://assets/v07/gem_%s.png" % i) as Texture2D)
     for item in ["runes", "egypt", "asia", "mixed"]:
         backgrounds.append(load("res://assets/v03/%s_scene.png" % item) as Texture2D)
     scene_bg = load("res://assets/v03/menu_scene.png") as Texture2D
@@ -147,7 +149,12 @@ func _ready() -> void:
     art["lock"] = load("res://assets/v05/lock.png") as Texture2D
     art["booster_plate"] = load("res://assets/v05/booster_plate.png") as Texture2D
     art["magic_glow"] = load("res://assets/v05/magic_glow.png") as Texture2D
+    for fx in ["spark_star","crystal_shard","magic_ring","light_ray","gem_glint"]:
+        art[fx]=load("res://assets/v07/%s.png" % fx) as Texture2D
     for wi in range(4):
+        for stage in range(5):
+            art["world_%s_stage_%s" % [wi,stage]]=load(
+                "res://assets/v07/world_%s_stage_%s.png" % [wi,stage]) as Texture2D
         art["mural_%d" % wi] = load("res://assets/v06/mural_%d.png" % wi) as Texture2D
         for ri in range(4):
             art["relic_%d_%d" % [wi,ri]] = load("res://assets/v06/relic_%d_%d.png" % [wi,ri]) as Texture2D
@@ -188,6 +195,9 @@ func _process(delta: float) -> void:
     clock += delta
     if victory_spark_age>0.0:
         victory_spark_age=maxf(0.0,victory_spark_age-delta)
+    if threshold_flash_age>0.0:
+        threshold_flash_age=maxf(0.0,threshold_flash_age-delta)
+        queue_redraw()
     if impact_flash > 0.0:
         impact_flash = maxf(0.0, impact_flash-delta*2.1)
         queue_redraw()
@@ -213,7 +223,7 @@ func _process(delta: float) -> void:
         if fall_age >= 0.35:
             fall_ghosts.clear()
         queue_redraw()
-    var tick := int(clock * (12.0 if save.pref("reduce_motion") else 30.0))
+    var tick := int(clock * V07Visuals.frame_rate(save.pref("reduce_motion"),save.pref("low_effects")))
     if tick != render_tick:
         render_tick = tick
         queue_redraw()
@@ -282,7 +292,10 @@ func _draw() -> void:
     if bg!=null:
         draw_texture_rect(bg,Rect2(Vector2.ZERO,get_viewport_rect().size),false)
     var extra_x:=90.0 if draw_layout_tablet_portrait and state not in ["playing","paused","victory","failure","recovery","tutorial"] else 0.0
-    draw_set_transform(_offset()+Vector2(extra_x,0)*_scale(),0.0,_scale())
+    var shake:=Vector2.ZERO
+    if save.pref("screen_shake") and not save.pref("reduce_motion") and impact_flash>0.0:
+        shake=Vector2(sin(clock*63.0),cos(clock*79.0))*3.0*impact_flash
+    draw_set_transform(_offset()+Vector2(extra_x,0)*_scale()+shake,0.0,_scale())
     if draw_layout_landscape:
         _background()
         match state:
@@ -336,6 +349,7 @@ func _background() -> void:
     var restoration:=save.world_stage(world_index)
     var darkening:=maxf(.05,.32-float(restoration)*.065) if state in ["playing","paused","victory","failure","recovery","tutorial"] else .11
     draw_rect(Rect2(Vector2.ZERO,_logical_size()),Color(.03,.007,.05,darkening))
+    _draw_restored_world()
     # Lightweight atmospheric dust, warm lens glow and cold rune shimmer.
     if save.pref("ambient_motion") and not save.pref("reduce_motion"):
         for i in range(34):
@@ -345,6 +359,51 @@ func _background() -> void:
             var alpha := 0.10 + 0.12*(.5+.5*sin(clock * 1.8+float(i)))
             var world_color: Color=GEM_COLORS[(i+world_index)%6] if world_index==3 else Color(1,.88,.59) if world_index==1 else Color(.72,1,.82) if world_index==2 else Color(.7,.85,1)
             draw_circle(pos+movement,1.0+float(i%3)*.6,Color(world_color.r,world_color.g,world_color.b,alpha))
+
+func _draw_restored_world() -> void:
+    # Background/environment FX are presentation-only: current stage comes
+    # directly from the saved relic progress and is never overwritten.
+    var stage:=save.world_stage(world_index)
+    var target:=_logical_size()
+    var key: String="world_%s_stage_%s" % [world_index,stage]
+    var motion:=V07Visuals.parallax(clock,world_index,
+        save.pref("reduce_motion") or save.pref("low_effects") or not save.pref("ambient_motion"))
+    var tint:=Color(1,1,1,V07Visuals.atmosphere_alpha(stage,save.pref("reduce_motion")))
+    _tex(key,Rect2(motion-Vector2(5,5),target+Vector2(10,10)),tint)
+    if not save.pref("ambient_motion") or save.pref("reduce_motion"):
+        return
+    # World-specific, deterministic, low-cost drifting magical details.
+    # Keep the center of the puzzle quiet so tile symbols remain legible.
+    var n:=10 if save.pref("low_effects") else 26
+    for k in range(n):
+        var px:=fposmod(float(k*151+world_index*37),target.x)
+        var py:=fposmod(float(k*281+stage*19)-clock*(5.0+float(k%4)*2.0),target.y)
+        var margin:=px<target.x*.22 or px>target.x*.78 or py<target.y*.24 or py>target.y*.81
+        if not margin:continue
+        var opacity: float=(.15+float(stage)*.035)*(.60+.40*sin(float(k)*1.9+clock*.7))
+        var tint_color: Color=GEM_COLORS[(k+world_index)%6]
+        if world_index==1:tint_color=Color(1,.82,.43)
+        elif world_index==2:tint_color=Color(1,.69,.8)
+        elif world_index==0:tint_color=Color(.63,.87,1)
+        var pos:=Vector2(px+sin(clock*.35+k)*9,py)
+        if world_index==2:
+            # Falling blossom petals.
+            draw_arc(pos,3.5,float(k),float(k)+PI,5,
+                Color(tint_color.r,tint_color.g,tint_color.b,opacity+.06),2.0,true)
+        elif world_index==1:
+            # Desert motes, lit by the restored temple.
+            draw_circle(pos,1.1+float(k%3)*.45,
+                Color(tint_color.r,tint_color.g,tint_color.b,opacity))
+        elif world_index==0:
+            # Cold northern runic frost motes.
+            draw_line(pos-Vector2(3,0),pos+Vector2(3,0),
+                Color(tint_color.r,tint_color.g,tint_color.b,opacity),1.5,true)
+            draw_line(pos-Vector2(0,3),pos+Vector2(0,3),
+                Color(tint_color.r,tint_color.g,tint_color.b,opacity),1.5,true)
+        else:
+            draw_arc(pos,3.5,clock+k,clock+k+PI*1.7,8,
+                Color(tint_color.r,tint_color.g,tint_color.b,opacity+.04),1.5,true)
+
 
 func _rect(rect: Rect2, color: Color, radius: int = 16, border: Color = Color.TRANSPARENT, bw: int = 0) -> void:
     var style := StyleBoxFlat.new()
@@ -557,6 +616,8 @@ func _draw_game() -> void:
     _rect(Rect2(176, 347, 336, 22), Color("#473e4c"), 12)
     _rect(Rect2(178, 349, maxf(3.0, 332.0*minf(1.0,float(amount)/maxf(1.0,float(goal)))), 18), Color("#40d6f0"), 9)
     draw_line(Vector2(181,351),Vector2(510,351),Color(1,1,1,.20),2,true)
+    if mode=="quest":
+        _draw_star_checkpoints(Rect2(178,349,332,18),float(amount)/float(maxi(1,goal)))
     # The rim is behind ALL playable gems; the top row is fully visible.
     _tex("board_frame", Rect2(15, 402, 690, 707))
     _tex("mural_%d" % world_index,Rect2(ORIGIN,CELL*Vector2(8,8)),Color(1,1,1,.55))
@@ -569,6 +630,7 @@ func _draw_game() -> void:
     if state=="playing" and _eligible_stars()>0:
         _button(Rect2(175,1346,370,65),"CLAIM %s ★ NOW" % _eligible_stars(),true,24)
     _draw_fx()
+    _draw_victory_light_wave()
 
 func _draw_tiles() -> void:
     for row in range(ROWS):
@@ -578,7 +640,9 @@ func _draw_tiles() -> void:
             var yy:=ORIGIN.y+float(row)*CELL
             var tile:=board[idx]
             var rect:=Rect2(xx+1,yy+1,CELL-2,CELL-2)
-            _rect(rect.grow(-3),Color(0.02,0.04,0.12,0.90),10,Color("#304e7f"),1)
+            _rect(rect.grow(-3),Color(.018,.035,.09,.93),10,Color("#304e7f"),1)
+            if save.pref("reactive_light") and not save.pref("low_effects") and not impact_fx.is_empty():
+                _draw_reactive_socket(rect)
             if tile==QuestRules.WALL:
                 _tex("stone",rect)
                 continue
@@ -606,6 +670,56 @@ func _draw_tiles() -> void:
             if locks.size()==64 and locks[idx]>0:
                 _draw_seal(rect,idx)
 
+func _draw_star_checkpoints(bar: Rect2,ratio: float) -> void:
+    for threshold in [.75,.85,1.0]:
+        var x:=bar.position.x+bar.size.x*threshold
+        var earned:=ratio>=threshold-.00001
+        var gold:Color=Color(.99,.81,.43,.96 if earned else .42)
+        draw_line(Vector2(x,bar.position.y-3),Vector2(x,bar.end.y+3),gold,2.5,true)
+        if earned and threshold_flash_age>0.0:
+            var alpha:float=clampf(threshold_flash_age,0.0,1.0)
+            draw_circle(Vector2(x,bar.position.y+bar.size.y*.5),9.0+14.0*(1.0-alpha),
+                Color(1,.93,.48,alpha*.34))
+
+func _draw_result_stars(cx:float,cy:float,stars:int,size:int) -> void:
+    if stars<=0:
+        _label("TRY AGAIN",cx,cy,size,GOLD,true)
+        return
+    var text_value: String="★".repeat(stars)
+    _label(text_value,cx,cy,size,GOLD,true)
+    if save.pref("reduce_motion") or victory_spark_age<=0.0:return
+    var alpha:=clampf(victory_spark_age/1.2,0.0,1.0)
+    for i in range(stars):
+        var x:=cx+(float(i)-float(stars-1)*.5)*float(size)*1.05
+        var point:=Vector2(x,cy-float(size)*.3)
+        draw_arc(point,18.0+21.0*(1.0-alpha),0,TAU,24,
+            Color(1,.86,.44,alpha*.64),2,true)
+        _tex("spark_star",Rect2(point-Vector2(13,13),Vector2(26,26)),
+            Color(1,1,.78,alpha*.42))
+
+func _draw_reactive_socket(rect: Rect2) -> void:
+    # Light a *small neighborhood* of each magical impact. Stop after the
+    # first nearby impact so 64 sockets do not create runaway draw calls.
+    for burst in impact_fx:
+        var p:Vector2=burst["pos"]
+        var distance:=rect.get_center().distance_to(p)
+        if distance > CELL*1.65:continue
+        var strength:=pow(1.0-distance/(CELL*1.65),2.0)*clampf(float(burst["life"])/.72,0,1)
+        var color:Color=burst["color"]
+        _rect(rect.grow(-1),Color.TRANSPARENT,11,
+            Color(color.r,color.g,color.b,strength*.72),2)
+        break
+
+func _draw_victory_light_wave() -> void:
+    if victory_spark_age<=0.0 or save.pref("reduce_motion"):return
+    var t:=1.0-clampf(victory_spark_age/1.2,0.0,1.0)
+    var center:=ORIGIN+Vector2(CELL*4,CELL*4)
+    var quality:float=.5 if save.pref("low_effects") else 1.0
+    draw_arc(center,45.0+t*CELL*5.2,0,TAU,64,
+        Color(.85,.66,1,.66*(1.0-t)*quality),4.0,true)
+    draw_arc(center,22.0+t*CELL*4.7,0,TAU,64,
+        Color(1,.84,.47,.38*(1.0-t)*quality),2.0,true)
+
 func _draw_fx() -> void:
     var calm := save.pref("reduce_motion")
     # The render's purple-white matching glow, expanding halo and gold sparks.
@@ -620,10 +734,25 @@ func _draw_fx() -> void:
             _draw_live_gem(old_rect,int(burst["tile"]),int(burst["index"]))
             _rect(old_rect.grow(-8),Color(.99,.63,1.0,(t-.53)*.34),11)
         _tex("magic_glow",Rect2(p-Vector2(86,86),Vector2(172,172)),Color(1,1,1,t*.96))
+        if save.pref("reactive_light"):
+            var rad:float=V07Visuals.shockwave_radius(float(burst["life"]))
+            _tex("magic_ring",Rect2(p-Vector2(rad,rad),Vector2(rad*2,rad*2)),
+                Color(color.r,color.g,color.b,t*.57))
+            if not calm and not save.pref("low_effects"):
+                _tex("light_ray",Rect2(p-Vector2(120,145),Vector2(240,290)),
+                    Color(color.r,color.g,color.b,t*.32))
         draw_circle(p,50*t,Color(color.r,color.g,color.b,.11*t))
         draw_arc(p,radius,0,TAU,48,Color(.97,.79,1,.63*t),3.5,true)
         draw_arc(p,radius*.72,0,TAU,48,Color(.61,.32,1,.45*t),3,true)
         if not calm:
+            var debris:=V07Visuals.debris_count(save.pref("low_effects"),calm,impact_fx.size())
+            for shard in range(debris):
+                var shard_angle:=float(shard)*TAU/float(maxi(1,debris))+float(burst["index"])*1.57
+                var travel:=Vector2(cos(shard_angle),sin(shard_angle))*((1.0-t)*CELL*1.16)
+                var fragment_size:=17.0+(1.0-t)*10.0
+                _tex("crystal_shard",Rect2(p+travel-Vector2.ONE*fragment_size*.5,
+                    Vector2.ONE*fragment_size),
+                    Color(color.r,color.g,color.b,t*.74))
             for j in range(8):
                 var a:=float(j)*TAU/8.0+clock*.52
                 var outer:=p+Vector2(cos(a),sin(a))*(18+(1-t)*56)
@@ -643,10 +772,10 @@ func _draw_fx() -> void:
         var pos: Vector2=p["pos"]
         var vel: Vector2=p["vel"]
         if not calm:draw_line(pos,pos-vel*.06,Color(tint.r,tint.g,tint.b,tint.a*.6),2,true)
-        _tex("spark",Rect2(pos-Vector2(15,15),Vector2(30,30)),tint)
+        _tex("spark_star",Rect2(pos-Vector2(15,15),Vector2(30,30)),tint)
     if fall_age<.31:
         var t:=clampf(fall_age/.31,0.0,1.0)
-        var eased:=1.0-pow(1.0-t,3.0)
+        var eased:=V07Visuals.gravity_ease(t,calm)
         for ghost in fall_ghosts:
             var pos: Vector2=(ghost["from"] as Vector2).lerp(ghost["to"] as Vector2,eased)
             var rect:=Rect2(ORIGIN+pos*CELL+Vector2(1,1),Vector2(CELL-2,CELL-2))
@@ -679,13 +808,13 @@ func _draw_result(victory: bool) -> void:
         var remaining := QuestRules.remaining(board)
         var percent := 100.0 * float(start_gems - remaining) / float(maxi(1, start_gems))
         _fancy("PERFECT CLEAR!" if remaining == 0 else ("LEVEL COMPLETE!" if victory else "NO MATCHES LEFT"), 360, 498, 35)
-        _label("★".repeat(earned_stars) if earned_stars > 0 else "TRY AGAIN", 360, 580, 56, GOLD, true)
+        _draw_result_stars(360,580,earned_stars,56)
         _label("CLEAR RATE: %.0f%%" % percent, 360, 637, 27, CREAM, true)
         _label("%s of %s gems cleared" % [start_gems - remaining, start_gems], 360, 694, 23, CREAM, true)
         _label("MOVES: %s   •   SCORE: %s" % [moves_used, score], 360, 743, 22, GOLD, true)
     else:
         _fancy("ARCADE WIN!" if victory else "OUT OF MOVES", 360, 498, 38)
-        _label("★".repeat(earned_stars) if victory else "TRY AGAIN", 360, 580, 55, GOLD, true)
+        _draw_result_stars(360,580,earned_stars if victory else 0,55)
         _label("Arcade high score: %s" % int(save.data.get("arcade_best", 0)), 360, 638, 23, CREAM, true)
         _fancy("SCORE %s" % score, 360, 696, 32)
         _label("Keep matching for your next record!", 360, 741, 21, CREAM, true)
@@ -1047,6 +1176,8 @@ func _configure_level(w: int, lvl: int) -> void:
     hint_cells.clear()
     status_message = "Clear the stones! No new gems will appear." if mode == "quest" else "Match 3 or more gems for points!"
     earned_stars = 0
+    threshold_flash_age=0.0
+    victory_spark_age=0.0
     recovery_used=false
     sparkles.clear()
     popups.clear()
@@ -1202,12 +1333,14 @@ func _attempt_swap(a: int, b: int) -> void:
             {"from":Vector2(b%COLS,int(b/COLS)),"to":Vector2(a%COLS,int(a/COLS)),"value":board[b],"target":a}
         ]
         swap_age=0.0
+    var stars_before:=_eligible_stars()
     _swap_values(a, b)
     moves_used += 1
     if mode == "arcade":
         moves_left -= 1
     hint_cells.clear()
     _resolve()
+    _celebrate_threshold(stars_before)
     _finish_or_save()
     _reset_idle()
     queue_redraw()
@@ -1232,9 +1365,9 @@ func _resolve() -> void:
             hit_map[idx] = true
             if objective_type == "collect" and board[idx] == target_glyph:
                 collected += 1
-            if sparkles.size() < 350:
+            if sparkles.size() < (110 if save.pref("low_effects") else 240):
                 _emit_fx(idx, GEM_COLORS[board[idx]])
-            if impact_fx.size()<(40 if save.pref("low_effects") else 96):
+            if impact_fx.size()<(24 if save.pref("low_effects") else 70):
                 impact_fx.append({"pos":ORIGIN+Vector2((idx%COLS)*CELL+CELL*.5,int(idx/COLS)*CELL+CELL*.5),"life":.72,"color":GEM_COLORS[board[idx]],"tile":board[idx],"index":idx})
         var result: Dictionary = QuestRules.adjacent_obstacles(board,locks,hits,seal_types)
         for cracked in result["cracked"]:
@@ -1265,6 +1398,26 @@ func _resolve() -> void:
         _vibrate(22)
         save.data["lifetime_matches"] = int(save.data.get("lifetime_matches", 0)) + total
 
+func _celebrate_threshold(previous_stars: int) -> void:
+    if mode!="quest":return
+    var now:=_eligible_stars()
+    if now<=previous_stars:return
+    threshold_flash_age=.9
+    if not save.pref("reduce_motion"):
+        popups.append({
+            "text":"%s STAR%s EARNED!" % [now,"S" if now>1 else ""],
+            "life":1.0,"pos":ORIGIN+Vector2(CELL*4,CELL*2.4)
+        })
+        for k in range(9 if save.pref("low_effects") else 21):
+            if sparkles.size()<180:
+                var pos:=ORIGIN+Vector2(CELL*4,CELL*.35)
+                var angle:=float(k)*TAU/float(9 if save.pref("low_effects") else 21)
+                sparkles.append({
+                    "pos":pos,
+                    "vel":Vector2(cos(angle),sin(angle))*randf_range(80,190),
+                    "life":randf_range(.4,.75),"color":GOLD
+                })
+
 func _emit_fx(idx: int,clr: Color) -> void:
     if save.pref("reduce_motion"):
         return
@@ -1280,6 +1433,7 @@ func _hammer(idx: int) -> void:
     if state != "playing" or hammers_left <= 0 or idx < 0 or board[idx] < 0:
         status_message = "Select a real gem to break."
         return
+    var stars_before:=_eligible_stars()
     _push_undo()
     hammers_left -= 1
     if board[idx] == target_glyph and objective_type == "collect":
@@ -1300,6 +1454,7 @@ func _hammer(idx: int) -> void:
                     board[cell] = randi_range(0, 5)
     _resolve()
     status_message = "HAMMER SMASH! +75"
+    _celebrate_threshold(stars_before)
     _finish_or_save()
     queue_redraw()
 
@@ -1553,6 +1708,7 @@ func _undo_last() -> void:
     swap_ghosts.clear()
     swap_age=1.0
     impact_fx.clear()
+    threshold_flash_age=0.0
     hint_cells.clear()
     hammer_mode = false
     status_message = "Last move restored. Choose carefully!"
@@ -1637,16 +1793,27 @@ func _draw_live_gem(rect: Rect2, tile: int, index: int) -> void:
         _rect(rect, GEM_COLORS[tile], 12)
     # Avoid unreadable small numbers in the normal view.
     var glyph: String = SYMBOLS[world_index][tile]
-    _label(glyph, rect.get_center().x, rect.position.y + 50, 41, Color("#fff9ec"), true, _glyph_font(tile))
+    var gx:=rect.get_center().x
+    var gy:=rect.position.y+50
+    _label(glyph,gx+1.4,gy+2.1,41,Color(.05,.035,.19,.85),true,_glyph_font(tile))
+    if save.pref("reactive_light") and not save.pref("low_effects"):
+        _label(glyph,gx,gy,41,Color(1,1,.95,.28),true,_glyph_font(tile))
+    _label(glyph,gx,gy,41,Color("#fff9ec"),true,_glyph_font(tile))
+    if save.pref("gem_shimmer") and not save.pref("reduce_motion"):
+        var reflected:=V07Visuals.gem_specular(clock,index,save.pref("low_effects"),save.pref("reduce_motion"))
+        if reflected>.10:
+            _tex("gem_glint",rect.grow(-4),
+                Color(1,1,1,reflected*.75))
+            if reflected>.58 and not save.pref("low_effects"):
+                _tex("spark_star",Rect2(rect.position+Vector2(15,12),Vector2(30,30)),
+                    Color(1,.94,.71,reflected*.76))
     if save.pref("color_assist"):
         _label(str(tile + 1), rect.position.x + rect.size.x - 13, rect.position.y + 18, 14, Color("#ffedac"), true)
     if save.pref("gem_shimmer") and not save.pref("reduce_motion") and not save.pref("low_effects"):
         var shimmer:=pow(maxf(0.0,sin(clock*.95+float(index)*2.37)),9)
         if shimmer>.12:
             draw_line(rect.position+Vector2(12,15),rect.position+Vector2(rect.size.x*.55,15),
-                Color(1,.96,.88,shimmer*.43),2.0,true)
-            draw_arc(rect.get_center(),rect.size.x*.43,-.75,.25,18,
-                Color(1,.92,1,shimmer*.34),2.0,true)
+                Color(1,.96,.88,shimmer*.25),2.0,true)
 
 
 func _draw_seal(rect: Rect2,idx: int) -> void:
@@ -1708,6 +1875,8 @@ func _draw_portrait_tablet_game() -> void:
     _label("CLEAR 75% TO PASS" if mode=="quest" else "ARCADE OBJECTIVE",177,347,25,INK,false,display_font)
     _rect(Rect2(195,357,481,20),Color("#4e4356"),9)
     _rect(Rect2(195,357,maxf(4,481.0*float(amount)/maxf(1.0,float(goal))),20),Color("#43d4f3"),9)
+    if mode=="quest":
+        _draw_star_checkpoints(Rect2(195,357,481,20),float(amount)/float(maxi(1,goal)))
     _label("%s / %s" % [amount,goal],764,378,23,INK,true)
     _tex("board_frame",Rect2(24,376,854,844))
     _tex("mural_%d" % world_index,Rect2(ORIGIN,CELL*Vector2(8,8)),Color(1,1,1,.63))
@@ -1810,6 +1979,8 @@ func _draw_tablet_game() -> void:
     var target:=start_gems if mode=="quest" else score_target
     _rect(Rect2(885,466,397,21),Color("#3b3852"),12)
     _rect(Rect2(885,466,maxf(4.0,397.0*float(amount)/maxf(1.0,float(target))),21),Color("#41d7f3"),12)
+    if mode=="quest":
+        _draw_star_checkpoints(Rect2(885,466,397,21),float(amount)/float(maxi(1,target)))
     _label("%s / %s" % [amount,target],1373,484,20,INK,true)
     _label(status_message,1159,577,19,CREAM,true)
     for i in range(4):
@@ -1917,7 +2088,7 @@ func _draw_tablet_overlay() -> void:
         _button(Rect2(550,547,500,88),"RETRY",false,26)
     else:
         _fancy("PERFECT CLEAR!" if earned_stars==3 else "LEVEL COMPLETE!" if state=="victory" else "NO MATCHES LEFT",800,215,39)
-        _label("★".repeat(earned_stars) if state=="victory" else "TRY AGAIN",800,302,48,GOLD,true)
+        _draw_result_stars(800,302,earned_stars if state=="victory" else 0,48)
         _label("CLEAR RATE: %.0f%%" % QuestProgress.clear_rate(start_gems,QuestRules.remaining(board)) if mode=="quest" else "SCORE: %s" % score,800,380,23,CREAM,true)
         _button(Rect2(550,438,500,88),"NEXT LEVEL" if state=="victory" else "RETRY",true,29)
         _button(Rect2(550,547,500,88),"HOME",false,26)
