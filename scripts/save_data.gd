@@ -77,12 +77,14 @@ func load_all() -> void:
     if typeof(data["restoration"])!=TYPE_ARRAY or data["restoration"].size()!=4:
         data["restoration"]=[0,0,0,0]
     for w in range(4):
-        var completed:=0
-        for lvl in range(1,13):
-            if int(best_result(w,lvl).get("stars",0))>0:completed+=1
-        data["restoration"][w]=maxi(int(data["restoration"][w]),mini(4,int(completed/3)))
-        for k in range(int(completed/3)):
-            data["relics"]["%s-%s" % [w,k]]=true
+        for k in range(4):
+            if int(best_result(w,(k+1)*3).get("stars",0))>0:
+                data["relics"]["%s-%s" % [w,k]]=true
+        var stage:=0
+        for k in range(4):
+            if bool(data["relics"].get("%s-%s" % [w,k],false)):
+                stage=k+1
+        data["restoration"][w]=maxi(int(data["restoration"][w]),stage)
 
 func save_all() -> bool:
     var file := FileAccess.open(TEMP, FileAccess.WRITE)
@@ -132,13 +134,11 @@ func record_victory(world: int, level: int, score: int, stars: int) -> void:
     }
     data["unlocked"][world] = maxi(unlocked_level(world), mini(12, level + 1))
     # Four illustrated artifact milestones per world (3, 6, 9, 12).
-    var milestones := 0
-    for lvl in range(1,13):
-        if int(best_result(world,lvl).get("stars",0))>0:milestones+=1
-    var stage:=mini(4,int(milestones/3))
-    data["restoration"][world]=maxi(int(data["restoration"][world]),stage)
-    for k in range(stage):
-        data["relics"]["%s-%s" % [world,k]]=true
+    # Relics unlock at levels 3, 6, 9 and 12 (not just any three wins).
+    if level in [3,6,9,12]:
+        var slot:=int(level/3)-1
+        data["relics"]["%s-%s" % [world,slot]]=true
+        data["restoration"][world]=maxi(int(data["restoration"][world]),slot+1)
     data["total_stars"] = total_stars()
     data["current"] = {}
     save_all()
