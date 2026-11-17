@@ -1,5 +1,5 @@
 extends SceneTree
-## Capture actual Godot-rendered v0.5 game scenes; source screenshots,
+## Capture actual Godot-rendered v0.6 game scenes; source screenshots,
 ## not a pasted image of the static reference illustration.
 const QuestRules=preload("res://scripts/quest_rules.gd")
 func _initialize()->void:
@@ -8,7 +8,7 @@ func snap(name:String)->bool:
     var img:=root.get_texture().get_image()
     var e:=img.save_png("res://build/visual/"+name+".png")
     if e!=OK:
-        push_error("Could not save v0.5 screen: "+name)
+        push_error("Could not save v0.6 screen: "+name)
         return false
     return true
 func wait_frames()->void:
@@ -18,7 +18,7 @@ func _capture()->void:
     root.add_child(game)
     root.content_scale_size=Vector2i(720,1440)
     game.save.reset_progress()
-    game.save.data["tutorial_done_v05"]=true
+    game.save.data["tutorial_done_v06"]=true
     for i in range(8):await process_frame
     await RenderingServer.frame_post_draw
     if not snap("menu"):quit(1);return
@@ -65,7 +65,7 @@ func _capture()->void:
     for pair in last_scene["solution"]:
         game._attempt_swap(int(pair[0]),int(pair[1]))
     if game.state!="victory":
-        push_error("v0.5 visual capture could not reach victory")
+        push_error("v0.6 visual capture could not reach victory")
         quit(1);return
     game.fall_ghosts.clear()
     game.fall_age=1
@@ -74,5 +74,5 @@ func _capture()->void:
     await RenderingServer.frame_post_draw
     if not snap("victory"):quit(1);return
     game.save.reset_progress()
-    print("VISUAL PASS: v0.5 all worlds, live match FX, menu, pause, settings, victory")
+    print("VISUAL PASS: v0.6 all worlds, live match FX, menu, pause, settings, victory")
     quit(0)
