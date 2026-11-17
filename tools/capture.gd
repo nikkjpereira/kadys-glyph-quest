@@ -19,6 +19,7 @@ func _capture()->void:
     root.add_child(game)
     game.save.reset_progress()
     game.save.data["tutorial_done_v06"]=true
+    root.size=Vector2i(720,1440)
     root.content_scale_size=Vector2i(720,1440)
     for i in range(8):await process_frame
     await RenderingServer.frame_post_draw
@@ -69,14 +70,17 @@ func _capture()->void:
     if not snap("victory"):quit(1);return
     game.mode="quest"
     game._start_level(0,8)
+    root.size=Vector2i(1080,2400)
     root.content_scale_size=Vector2i(1080,2400)
     for i in range(12):await process_frame
     await RenderingServer.frame_post_draw
     if not snap("phone_tall"):quit(1);return
+    root.size=Vector2i(1200,1920)
     root.content_scale_size=Vector2i(1200,1920)
     for i in range(12):await process_frame
     await RenderingServer.frame_post_draw
     if not snap("tablet_portrait"):quit(1);return
+    root.size=Vector2i(1920,1200)
     root.content_scale_size=Vector2i(1920,1200)
     for i in range(12):await process_frame
     await RenderingServer.frame_post_draw
