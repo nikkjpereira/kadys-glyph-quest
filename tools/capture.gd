@@ -54,7 +54,47 @@ func _capture()->void:
     for i in range(6):await process_frame
     await RenderingServer.frame_post_draw
     if not snap("arcade"):quit(1);return
+    # Real Godot screenshot of the manual Claim Victory button and
+    # partial-win results at the threshold.
     game.mode="quest"
+    game._start_level(0,2)
+    var qualifying_scene:=QuestRules.generate(0,2)
+    var captured:=false
+    for pair in qualifying_scene["solution"]:
+        game._attempt_swap(int(pair[0]),int(pair[1]))
+        if game.state=="playing" and game._eligible_stars()>0:
+            game.fall_ghosts.clear()
+            game.fall_age=1.0
+            game.impact_fx.clear()
+            for i in range(8):await process_frame
+            await RenderingServer.frame_post_draw
+            if not snap("qualified"):quit(1);return
+            game._claim_qualified()
+            for i in range(8):await process_frame
+            await RenderingServer.frame_post_draw
+            if not snap("partial_victory"):quit(1);return
+            captured=true
+            break
+    if not captured:
+        push_error("No qualifying state for claim screenshot")
+        quit(1);return
+    # Rescue overlay after a truly deadlocked 60% clear.
+    game._start_level(0,5)
+    for i in range(64):
+        game.board[i]=QuestRules.EMPTY
+        game.locks[i]=0
+        game.seal_types[i]=0
+    for row in range(8):
+        for col in range(3):
+            game.board[row*8+col]=(row+col)%6
+    game.start_gems=60
+    game._finish_or_save()
+    if game.state!="recovery":
+        push_error("Free-rescue state couldn't be captured")
+        quit(1);return
+    for i in range(8):await process_frame
+    await RenderingServer.frame_post_draw
+    if not snap("free_rescue"):quit(1);return
     game._start_level(0,1)
     var finish_scene:=QuestRules.generate(0,1)
     for move_pair in finish_scene["solution"]:

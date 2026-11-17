@@ -1,10 +1,11 @@
 extends Node2D
-## Runefall v0.6.1: responsive, finite match-3 with relics and world restoration.
+## Runefall v0.6.2: responsive, finite match-3 with relics and world restoration.
 ## Keep play fully functional offline. No ads or billing in test releases.
 
 const SaveData = preload("res://scripts/save_data.gd")
 const Brand = preload("res://scripts/brand_config.gd")
 const QuestRules = preload("res://scripts/quest_rules.gd")
+const QuestProgress=preload("res://scripts/quest_progress.gd")
 const COLS := 8
 const ROWS := 8
 var CELL := 82.0
@@ -88,6 +89,7 @@ var hint_until := 0
 var last_action_at := 0
 var status_message := "Match three or more identical glyphs!"
 var earned_stars := 0
+var recovery_used := false
 var ui_font: Font
 var display_font: Font
 var art: Dictionary = {}
@@ -275,16 +277,16 @@ func _draw() -> void:
         CELL=82.0
         ORIGIN=Vector2(32,429)
     var bg: Texture2D = scene_bg
-    if state in ["playing","paused","victory","failure","tutorial"] and backgrounds.size()==4:
+    if state in ["playing","paused","victory","failure","recovery","tutorial"] and backgrounds.size()==4:
         bg=backgrounds[world_index]
     if bg!=null:
         draw_texture_rect(bg,Rect2(Vector2.ZERO,get_viewport_rect().size),false)
-    var extra_x:=90.0 if draw_layout_tablet_portrait and state not in ["playing","paused","victory","failure","tutorial"] else 0.0
+    var extra_x:=90.0 if draw_layout_tablet_portrait and state not in ["playing","paused","victory","failure","recovery","tutorial"] else 0.0
     draw_set_transform(_offset()+Vector2(extra_x,0)*_scale(),0.0,_scale())
     if draw_layout_landscape:
         _background()
         match state:
-            "playing","paused","victory","failure","tutorial":
+            "playing","paused","victory","failure","recovery","tutorial":
                 _draw_tablet_game()
                 if state!="playing":_draw_tablet_overlay()
             "menu":_draw_tablet_menu()
@@ -293,7 +295,7 @@ func _draw() -> void:
             "settings","settings_fx":_draw_tablet_settings()
             "progress":_draw_tablet_progress()
             "reset_confirm":_draw_tablet_settings()
-    elif draw_layout_tablet_portrait and state in ["playing","paused","victory","failure","tutorial"]:
+    elif draw_layout_tablet_portrait and state in ["playing","paused","victory","failure","recovery","tutorial"]:
         _background()
         _draw_portrait_tablet_game()
         if state!="playing":_draw_portrait_tablet_overlay()
@@ -306,11 +308,12 @@ func _draw() -> void:
             "settings_fx":_draw_effects_settings()
             "progress":_draw_progress()
             "collection":_draw_collection()
-            "playing","paused","victory","failure","tutorial":
+            "playing","paused","victory","failure","recovery","tutorial":
                 _draw_game()
                 if state=="paused":_draw_pause()
                 elif state=="victory":_draw_result(true)
                 elif state=="failure":_draw_result(false)
+                elif state=="recovery":_draw_recovery()
                 elif state=="tutorial":_draw_tutorial()
             "reset_confirm":
                 _draw_settings()
@@ -331,7 +334,7 @@ func _background() -> void:
     else:
         draw_rect(Rect2(Vector2.ZERO,_logical_size()), NAVY)
     var restoration:=save.world_stage(world_index)
-    var darkening:=maxf(.05,.32-float(restoration)*.065) if state in ["playing","paused","victory","failure","tutorial"] else .11
+    var darkening:=maxf(.05,.32-float(restoration)*.065) if state in ["playing","paused","victory","failure","recovery","tutorial"] else .11
     draw_rect(Rect2(Vector2.ZERO,_logical_size()),Color(.03,.007,.05,darkening))
     # Lightweight atmospheric dust, warm lens glow and cold rune shimmer.
     if save.pref("ambient_motion") and not save.pref("reduce_motion"):
@@ -537,7 +540,7 @@ func _draw_game() -> void:
     if mode == "quest":
         amount = start_gems-QuestRules.remaining(board)
         goal = start_gems
-        _label("CLEAR THE BOARD", 170, 328, 25, INK, false, display_font)
+        _label("CLEAR 75% TO PASS", 170, 328, 25, INK, false, display_font)
         _label("%s / %s" % [amount,goal], 592, 375, 22, INK, true, display_font)
         _label("✦", 101, 366, 41, Color("#8d5d2a"), true)
     elif objective_type=="collect":
@@ -563,6 +566,8 @@ func _draw_game() -> void:
     _draw_booster(1,shuffles_left,"SHUFFLE","booster_2")
     _draw_booster(2,hammers_left,"HAMMER","booster_1")
     _draw_booster(3,undo_left,"UNDO","undo")
+    if state=="playing" and _eligible_stars()>0:
+        _button(Rect2(175,1346,370,65),"CLAIM %s ★ NOW" % _eligible_stars(),true,24)
     _draw_fx()
 
 func _draw_tiles() -> void:
@@ -673,7 +678,7 @@ func _draw_result(victory: bool) -> void:
     if mode == "quest":
         var remaining := QuestRules.remaining(board)
         var percent := 100.0 * float(start_gems - remaining) / float(maxi(1, start_gems))
-        _fancy("PERFECT CLEAR!" if remaining == 0 else ("ROUND COMPLETE!" if victory else "NO MATCHES LEFT"), 360, 498, 35)
+        _fancy("PERFECT CLEAR!" if remaining == 0 else ("LEVEL COMPLETE!" if victory else "NO MATCHES LEFT"), 360, 498, 35)
         _label("★".repeat(earned_stars) if earned_stars > 0 else "TRY AGAIN", 360, 580, 56, GOLD, true)
         _label("CLEAR RATE: %.0f%%" % percent, 360, 637, 27, CREAM, true)
         _label("%s of %s gems cleared" % [start_gems - remaining, start_gems], 360, 694, 23, CREAM, true)
@@ -688,6 +693,16 @@ func _draw_result(victory: bool) -> void:
     _button(Rect2(112, 889, 496, 76), "REPLAY" if victory else "SELECT LEVEL", false, 26)
     _button(Rect2(112, 984, 496, 60), "HOME", false, 24)
 
+func _draw_recovery() -> void:
+    _modal()
+    _panel(Rect2(64,430,592,546),Color("#38234f"),true)
+    _fancy("NO MATCHES REMAIN",360,520,34)
+    _label("You've cleared %.0f%% of the gems." % QuestProgress.clear_rate(start_gems,QuestRules.remaining(board)),360,596,24,CREAM,true)
+    _label("Reach 75% to complete the level.",360,651,21,GOLD,true)
+    _label("Your first recovery is FREE. No ads.",360,695,20,CREAM,true)
+    _button(Rect2(109,751,502,82),"FREE RESCUE",true,29)
+    _button(Rect2(109,856,502,73),"RETRY LEVEL",false,25)
+
 func _draw_tutorial() -> void:
     _modal(0.73)
     _panel(Rect2(72, 445, 576, 505), Color("#392853"), true)
@@ -696,9 +711,9 @@ func _draw_tutorial() -> void:
         _label("SWAP ADJACENT GEMS TO MAKE 3+.", 360, 608, 19, CREAM, true)
         _label("Matched gems disappear and fall.", 360, 650, 22, CREAM, true)
         _label("NO NEW GEMS will replace them.", 360, 688, 21, GOLD, true)
-        _label("Finish using few moves for extra stars!", 360, 727, 20, CREAM, true)
-        _label("A round ends only when no moves", 360, 763, 21, CREAM, true)
-        _label("remain or the board is empty.", 360, 794, 21, CREAM, true)
+        _label("75% = PASS  •  85% = 2 ★  •  100% = 3 ★", 360, 727, 19, CREAM, true)
+        _label("Claim victory after 75% or play on.", 360, 763, 20, CREAM, true)
+        _label("One free rescue if you get stuck.", 360, 794, 19, CREAM, true)
     else:
         _label("ARCADE MODE", 360, 615, 24, GOLD, true)
         _label("Swap adjacent gems to match 3+.", 360, 668, 23, CREAM, true)
@@ -719,20 +734,20 @@ func _input(event: InputEvent) -> void:
     if event is InputEventScreenTouch:
         var e := event as InputEventScreenTouch
         if e.pressed:
-            touch_start = (e.position-_offset())/_scale()-Vector2(90,0) if draw_layout_tablet_portrait and state not in ["playing","paused","victory","failure","tutorial"] else (e.position-_offset())/_scale()
+            touch_start = (e.position-_offset())/_scale()-Vector2(90,0) if draw_layout_tablet_portrait and state not in ["playing","paused","victory","failure","recovery","tutorial"] else (e.position-_offset())/_scale()
             touch_down = true
         elif touch_down:
             touch_down = false
-            _gesture(touch_start,(e.position-_offset())/_scale()-Vector2(90,0) if draw_layout_tablet_portrait and state not in ["playing","paused","victory","failure","tutorial"] else (e.position-_offset())/_scale())
+            _gesture(touch_start,(e.position-_offset())/_scale()-Vector2(90,0) if draw_layout_tablet_portrait and state not in ["playing","paused","victory","failure","recovery","tutorial"] else (e.position-_offset())/_scale())
     elif event is InputEventMouseButton and not OS.has_feature("mobile"):
         var e := event as InputEventMouseButton
         if e.button_index == MOUSE_BUTTON_LEFT:
             if e.pressed:
-                touch_start = (e.position-_offset())/_scale()-Vector2(90,0) if draw_layout_tablet_portrait and state not in ["playing","paused","victory","failure","tutorial"] else (e.position-_offset())/_scale()
+                touch_start = (e.position-_offset())/_scale()-Vector2(90,0) if draw_layout_tablet_portrait and state not in ["playing","paused","victory","failure","recovery","tutorial"] else (e.position-_offset())/_scale()
                 touch_down = true
             elif touch_down:
                 touch_down = false
-                _gesture(touch_start,(e.position-_offset())/_scale()-Vector2(90,0) if draw_layout_tablet_portrait and state not in ["playing","paused","victory","failure","tutorial"] else (e.position-_offset())/_scale())
+                _gesture(touch_start,(e.position-_offset())/_scale()-Vector2(90,0) if draw_layout_tablet_portrait and state not in ["playing","paused","victory","failure","recovery","tutorial"] else (e.position-_offset())/_scale())
     elif event is InputEventKey:
         var e := event as InputEventKey
         if e.pressed and e.keycode in [KEY_ESCAPE,KEY_BACK]:
@@ -749,7 +764,7 @@ func _gesture(start: Vector2, finish: Vector2) -> void:
         _music_state()
         queue_redraw()
         return
-    if draw_layout_tablet_portrait and state in ["playing","paused","victory","failure","tutorial"]:
+    if draw_layout_tablet_portrait and state in ["playing","paused","victory","failure","recovery","tutorial"]:
         _gesture_portrait_tablet(start,p)
         _music_state()
         queue_redraw()
@@ -770,6 +785,7 @@ func _gesture(start: Vector2, finish: Vector2) -> void:
                     if _inside(p,55+w*155,320,148,78):
                         album_world=w
         "playing": _touch_game(start,p)
+        "recovery":_touch_recovery(p)
         "paused": _touch_pause(p)
         "victory","failure": _touch_result(p)
         "tutorial":
@@ -795,6 +811,8 @@ func _back() -> void:
         "playing","tutorial":
             state="paused"
             _save_current()
+        "recovery":
+            _skip_recovery()
         "paused":
             state="playing"
         "levels","progress","collection":
@@ -917,7 +935,16 @@ func _touch_result(p: Vector2) -> void:
     elif _inside(p, 112, 984, 496, 60):
         state = "menu"
 
+func _touch_recovery(p: Vector2) -> void:
+    if _inside(p,109,751,502,82):
+        _free_recovery()
+    elif _inside(p,109,856,502,73):
+        _start_level(world_index,level)
+
 func _touch_game(start: Vector2, p: Vector2) -> void:
+    if mode=="quest" and _eligible_stars()>0 and _inside(p,175,1346,370,65):
+        _claim_qualified()
+        return
     if _inside(p, 10, 55, 77, 76):
         _save_current()
         state = "menu"
@@ -1020,6 +1047,7 @@ func _configure_level(w: int, lvl: int) -> void:
     hint_cells.clear()
     status_message = "Clear the stones! No new gems will appear." if mode == "quest" else "Match 3 or more gems for points!"
     earned_stars = 0
+    recovery_used=false
     sparkles.clear()
     popups.clear()
     fall_ghosts.clear()
@@ -1065,6 +1093,7 @@ func _resume_saved() -> bool:
     current_relic=str(current.get("relic",""))
     reference_moves=maxi(1,int(current.get("reference_moves",12)))
     boosters_used=maxi(0,int(current.get("boosters_used",0)))
+    recovery_used=bool(current.get("recovery_used",false))
     score = maxi(0, int(current.get("score", 0)))
     moves_left = maxi(0, int(current.get("moves", 25)))
     moves_used = maxi(0, int(current.get("moves_used", 0)))
@@ -1081,6 +1110,8 @@ func _resume_saved() -> bool:
             undo_history.append(item)
     state = "playing" if bool(save.data.get("tutorial_done_v06", false)) else "tutorial"
     _reset_idle()
+    if mode=="quest" and QuestRules.legal_moves(board,locks).is_empty():
+        _finish_or_save()
     queue_redraw()
     return true
 
@@ -1091,6 +1122,7 @@ func _save_current() -> void:
         "mode": mode,"board_version":6,"world": world_index, "level": level, "board": board.duplicate(),
         "locks":locks.duplicate(),"seal_types":seal_types.duplicate(),"relic":current_relic,
         "reference_moves":reference_moves,"boosters_used":boosters_used,
+        "recovery_used":recovery_used,
         "score": score, "moves": moves_left, "moves_used": moves_used,
         "start_gems": start_gems, "collected": collected,
         "hints": hints_left, "shuffles": shuffles_left, "hammers": hammers_left,
@@ -1138,19 +1170,9 @@ func _swap_values(a: int, b: int) -> void:
     board[b] = v
 
 func _find_hint() -> Array[int]:
-    var options := QuestRules.legal_moves(board,locks)
-    if options.is_empty():
-        return []
-    var best := options[0]
-    var best_points := -1
-    for pair in options:
-        _swap_values(pair.x, pair.y)
-        var hits := _find_matches().size()
-        _swap_values(pair.x, pair.y)
-        if hits > best_points:
-            best_points = hits
-            best = pair
-    return [best.x, best.y]
+    var suggestion:=QuestRules.recommend_move(world_index,level,board,locks,seal_types,mode=="quest")
+    if suggestion.x<0:return []
+    return [suggestion.x,suggestion.y]
 
 func _attempt_swap(a: int, b: int) -> void:
     if state != "playing" or a < 0 or b < 0 or not _adjacent(a, b):
@@ -1329,25 +1351,25 @@ func _reset_idle() -> void:
 
 func _finish_or_save() -> void:
     if mode == "quest":
-        var left := QuestRules.remaining(board)
-        var cleared := start_gems - left
-        if left == 0:
-            earned_stars=1
-            if moves_used<=ceili(float(reference_moves)*1.20):earned_stars+=1
-            if moves_used<=reference_moves and boosters_used==0:earned_stars+=1
-            state="victory"
-            status_message="PERFECT CLEAR!"
-            save.record_victory(world_index,level,score,earned_stars)
-            victory_spark_age=1.2
-            _play_sound("win")
-            if level%3==0:_play_sound("relic")
-            _vibrate(70)
-        elif _find_hint().is_empty():
-            state="failure"
-            status_message="No legal matches remain. Try a different strategy!"
-            save.clear_current()
-            _play_sound("fail")
+        var left:=QuestRules.remaining(board)
+        var stars:=QuestProgress.stars(start_gems,left)
+        if left==0:
+            _complete_quest()
+        elif QuestRules.legal_moves(board,locks).is_empty():
+            if stars>0:
+                _complete_quest()
+            elif not recovery_used:
+                state="recovery"
+                status_message="No legal matches remain. One FREE rescue is available."
+                _save_current()
+            else:
+                state="failure"
+                status_message="No matches left; less than 75% cleared."
+                save.clear_current()
+                _play_sound("fail")
         else:
+            if stars>0:
+                status_message="LEVEL QUALIFIED! Claim %s star(s) or keep playing." % stars
             _save_current()
         return
     var won := collected >= target_amount if objective_type == "collect" else score >= score_target
@@ -1368,6 +1390,74 @@ func _finish_or_save() -> void:
             status_message = "Arcade board refreshed."
         _save_current()
 
+func _complete_quest() -> void:
+    if mode!="quest" or state=="victory":
+        return
+    earned_stars=QuestProgress.stars(start_gems,QuestRules.remaining(board))
+    if earned_stars==0:return
+    state="victory"
+    status_message="PERFECT CLEAR!" if earned_stars==3 else "LEVEL COMPLETE!"
+    save.record_victory(world_index,level,score,earned_stars)
+    victory_spark_age=1.2
+    _play_sound("win")
+    if level%3==0:_play_sound("relic")
+    _vibrate(70)
+    queue_redraw()
+
+func _claim_qualified() -> void:
+    if state=="playing" and mode=="quest" and QuestProgress.qualifies(start_gems,QuestRules.remaining(board)):
+        _complete_quest()
+
+func _free_recovery() -> void:
+    if state!="recovery" or mode!="quest" or recovery_used:
+        return
+    recovery_used=true
+    boosters_used+=1
+    # Free, no ads, no gems purchased. Prefer reshuffle that creates a legal
+    # match without introducing any new gems or changing sealed states.
+    var candidate:=QuestRules.recovery_shuffle(board,locks)
+    if not candidate.is_empty():
+        board=candidate
+        state="playing"
+        status_message="FREE RESCUE! A new match is available."
+        hint_cells.clear()
+        _reset_idle()
+        _save_current()
+    else:
+        # When no legal reshuffle exists (e.g. only pairs remain), remove
+        # up to three existing gems. This never creates replacement gems.
+        var removed:=0
+        for idx in range(board.size()):
+            if board[idx]>=0 and (locks.is_empty() or locks[idx]==0):
+                board[idx]=QuestRules.EMPTY
+                if locks.size()==64:locks[idx]=0
+                if seal_types.size()==64:seal_types[idx]=0
+                removed+=1
+                if removed==3:break
+        if removed<3:
+            for idx in range(board.size()):
+                if board[idx]>=0:
+                    board[idx]=QuestRules.EMPTY
+                    if locks.size()==64:locks[idx]=0
+                    if seal_types.size()==64:seal_types[idx]=0
+                    removed+=1
+                    if removed==3:break
+        QuestRules.settle(board,locks,seal_types)
+        state="playing"
+        status_message="FREE RESCUE removed %d gems." % removed
+        _finish_or_save()
+    queue_redraw()
+
+func _skip_recovery() -> void:
+    if state=="recovery":
+        state="failure"
+        status_message="Retry the puzzle for a better result."
+        save.clear_current()
+
+func _eligible_stars() -> int:
+    if mode!="quest" or board.is_empty():return 0
+    return QuestProgress.stars(start_gems,QuestRules.remaining(board))
+
 func _vibrate(duration: int) -> void:
     if save.pref("haptics") and OS.has_feature("mobile"):
         Input.vibrate_handheld(duration)
@@ -1381,7 +1471,7 @@ func _play_sound(name: String) -> void:
 func _music_state() -> void:
     if music_player == null or world_tracks.size()!=5:
         return
-    var game_context:=state in ["playing","paused","victory","failure","tutorial"] or (state=="settings" and settings_return=="paused")
+    var game_context:=state in ["playing","paused","victory","failure","recovery","tutorial"] or (state=="settings" and settings_return=="paused")
     var target_index:=world_index+1 if game_context else 0
     var volume_linear:=float(save.setting_int("music_volume",85))/100.0
     var target_db:=linear_to_db(maxf(.001,volume_linear))-2.0
@@ -1615,7 +1705,7 @@ func _draw_portrait_tablet_game() -> void:
     _tex("parchment",Rect2(30,299,840,104))
     var amount:=start_gems-QuestRules.remaining(board) if mode=="quest" else score
     var goal:=start_gems if mode=="quest" else score_target
-    _label("CLEAR THE BOARD" if mode=="quest" else "ARCADE OBJECTIVE",177,347,25,INK,false,display_font)
+    _label("CLEAR 75% TO PASS" if mode=="quest" else "ARCADE OBJECTIVE",177,347,25,INK,false,display_font)
     _rect(Rect2(195,357,481,20),Color("#4e4356"),9)
     _rect(Rect2(195,357,maxf(4,481.0*float(amount)/maxf(1.0,float(goal))),20),Color("#43d4f3"),9)
     _label("%s / %s" % [amount,goal],764,378,23,INK,true)
@@ -1629,6 +1719,8 @@ func _draw_portrait_tablet_game() -> void:
         _tex(["booster_0","booster_2","booster_1","undo"][i],Rect2(x+49,1248,100,89))
         _label(str([hints_left,shuffles_left,hammers_left,undo_left][i]),x+172,1274,20,GOLD,true)
         _label(["HINT","SHUFFLE","HAMMER","UNDO"][i],x+99,1373,18,CREAM,true,display_font)
+    if state=="playing" and _eligible_stars()>0:
+        _button(Rect2(263,1391,374,46),"CLAIM %s ★ NOW" % _eligible_stars(),true,19)
     _draw_fx()
 
 func _draw_portrait_tablet_overlay()->void:
@@ -1641,8 +1733,13 @@ func _draw_portrait_tablet_overlay()->void:
         _button(Rect2(200,823,500,85),"SAVE & HOME")
     elif state=="tutorial":
         _label("MATCH THREE GEMS • NO REFILLS",450,608,22,CREAM,true)
-        _label("CLEAR EVERY GEM TO COMPLETE THE LEVEL",450,675,20,GOLD,true)
+        _label("CLEAR 75% TO PASS, 85% FOR 2 ★, ALL FOR 3 ★",450,675,18,GOLD,true)
         _button(Rect2(200,822,500,84),"LET'S PLAY!",true,27)
+    elif state=="recovery":
+        _fancy("FREE RESCUE AVAILABLE",450,527,30)
+        _label("CLEAR RATE: %.0f%%  •  TARGET: 75%%" % QuestProgress.clear_rate(start_gems,QuestRules.remaining(board)),450,630,22,CREAM,true)
+        _button(Rect2(200,733,500,84),"FREE RESCUE",true,28)
+        _button(Rect2(200,853,500,84),"RETRY LEVEL")
     else:
         _label("GEMS REMOVED: %s / %s" % [start_gems-QuestRules.remaining(board),start_gems],450,614,24,GOLD,true)
         _button(Rect2(200,733,500,84),"NEXT LEVEL" if state=="victory" else "RETRY",true,28)
@@ -1650,6 +1747,9 @@ func _draw_portrait_tablet_overlay()->void:
 
 func _gesture_portrait_tablet(start:Vector2,p:Vector2)->void:
     if state=="playing":
+        if mode=="quest" and _eligible_stars()>0 and _inside(p,263,1391,374,46):
+            _claim_qualified()
+            return
         if _inside(p,15,98,82,72):_save_current();state="menu";return
         if _inside(p,803,187,82,72):_save_current();state="paused";return
         for i in range(4):
@@ -1676,6 +1776,9 @@ func _gesture_portrait_tablet(start:Vector2,p:Vector2)->void:
             save.mark_tutorial()
             state="playing"
             _save_current()
+    elif state=="recovery":
+        if _inside(p,200,733,500,84):_free_recovery()
+        elif _inside(p,200,853,500,84):_start_level(world_index,level)
     elif state in ["victory","failure"]:
         if _inside(p,200,733,500,84):
             if mode=="arcade":_start_arcade(world_index)
@@ -1702,7 +1805,7 @@ func _draw_tablet_game() -> void:
     _label("MOVES",1290,317,19,CREAM,true)
     _fancy(str(moves_used) if mode=="quest" else str(moves_left),1290,356,32)
     _tex("parchment",Rect2(803,387,638,137))
-    _label("CLEAR THE BOARD" if mode=="quest" else "ARCADE OBJECTIVE",1119,441,27,INK,true,display_font)
+    _label("CLEAR 75% TO PASS" if mode=="quest" else "ARCADE OBJECTIVE",1119,441,27,INK,true,display_font)
     var amount:=start_gems-QuestRules.remaining(board) if mode=="quest" else score
     var target:=start_gems if mode=="quest" else score_target
     _rect(Rect2(885,466,397,21),Color("#3b3852"),12)
@@ -1717,7 +1820,10 @@ func _draw_tablet_game() -> void:
         _tex(key,Rect2(bx+33,640,95,94),Color.WHITE if count>0 else Color(.5,.5,.5,.85))
         _label(str(count),bx+138,666,22,GOLD,true)
         _label(["HINT","SHUFFLE","HAMMER","UNDO"][i],bx+79,777,16,CREAM,true)
-    _label("WORLD RESTORED: %s / 4   •   RELICS: %s / 4" % [save.world_stage(world_index),int(save.relic_total()/4)],1120,858,19,GOLD,true)
+    if state=="playing" and _eligible_stars()>0:
+        _button(Rect2(952,813,383,69),"CLAIM %s ★ NOW" % _eligible_stars(),true,25)
+    else:
+        _label("WORLD RESTORED: %s / 4   •   RELICS: %s / 16" % [save.world_stage(world_index),save.relic_total()],1120,858,19,GOLD,true)
     _draw_fx()
 
 func _draw_tablet_menu() -> void:
@@ -1799,14 +1905,20 @@ func _draw_tablet_overlay() -> void:
         _button(Rect2(555,512,490,92),"SAVE & HOME",false,29)
     elif state=="tutorial":
         _fancy("HOW TO PLAY",800,214,41)
-        _label("MATCH THREE. CLEAR EVERY GEM.",800,310,25,CREAM,true)
-        _label("NO NEW GEMS IN QUEST MODE.",800,367,24,GOLD,true)
+        _label("MATCH THREE. CLEAR 75% TO PASS.",800,310,25,CREAM,true)
+        _label("85% = 2 ★  •  100% = 3 ★",800,367,24,GOLD,true)
         _label("WATCH FOR CRACKED STONES AND SEALED GEMS.",800,423,21,CREAM,true)
         _button(Rect2(560,548,480,93),"BEGIN QUEST",true,29)
+    elif state=="recovery":
+        _fancy("ONE FREE RESCUE",800,215,43)
+        _label("NO LEGAL MATCHES REMAIN",800,302,25,CREAM,true)
+        _label("CLEAR RATE: %.0f%%  •  TARGET: 75%%" % QuestProgress.clear_rate(start_gems,QuestRules.remaining(board)),800,380,23,GOLD,true)
+        _button(Rect2(550,438,500,88),"FREE RESCUE",true,29)
+        _button(Rect2(550,547,500,88),"RETRY",false,26)
     else:
-        _fancy("PERFECT CLEAR!" if state=="victory" else "NO MATCHES LEFT",800,215,43)
+        _fancy("PERFECT CLEAR!" if earned_stars==3 else "LEVEL COMPLETE!" if state=="victory" else "NO MATCHES LEFT",800,215,39)
         _label("★".repeat(earned_stars) if state=="victory" else "TRY AGAIN",800,302,48,GOLD,true)
-        _label("SCORE %s   •   MOVES %s" % [score,moves_used],800,380,23,CREAM,true)
+        _label("CLEAR RATE: %.0f%%" % QuestProgress.clear_rate(start_gems,QuestRules.remaining(board)) if mode=="quest" else "SCORE: %s" % score,800,380,23,CREAM,true)
         _button(Rect2(550,438,500,88),"NEXT LEVEL" if state=="victory" else "RETRY",true,29)
         _button(Rect2(550,547,500,88),"HOME",false,26)
 
@@ -1835,6 +1947,9 @@ func _gesture_tablet(start:Vector2,p:Vector2) -> void:
             elif _inside(p,1178,820,350,63):
                 album_world=world_index;state="collection"
         "playing":
+            if mode=="quest" and _eligible_stars()>0 and _inside(p,952,813,383,69):
+                _claim_qualified()
+                return
             if _inside(p,705,121,88,69):
                 _save_current();state="menu";return
             if _inside(p,1470,124,87,69):
@@ -1852,6 +1967,9 @@ func _gesture_tablet(start:Vector2,p:Vector2) -> void:
                         3:_undo_last()
                     return
             _tablet_touch_board(start,p)
+        "recovery":
+            if _inside(p,550,438,500,88):_free_recovery()
+            elif _inside(p,550,547,500,88):_start_level(world_index,level)
         "paused":
             if _inside(p,555,270,490,92):state="playing"
             elif _inside(p,555,391,490,92):settings_return="paused";state="settings"

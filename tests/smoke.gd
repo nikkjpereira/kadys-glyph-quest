@@ -45,7 +45,7 @@ func _run()->void:
     if ice_total<8 or chain_total<6 or cracked_total<6:
         fail("new obstacles missing");return
     var brand=load("res://scripts/brand_config.gd")
-    if brand.DISPLAY_NAME!="Runefall" or brand.VERSION!="0.6.1":
+    if brand.DISPLAY_NAME!="Runefall" or brand.VERSION!="0.6.2":
         fail("Runefall branding metadata mismatch");return
     var game=load("res://scenes/Main.tscn").instantiate()
     root.add_child(game)
@@ -85,8 +85,8 @@ func _run()->void:
         if game.board[i]>=0:game.board[i]=i%2
     if QuestRules.legal_moves(game.board,game.locks).is_empty():
         game._finish_or_save()
-        if game.state!="failure":
-            fail("stalemate counted as victory");return
+        if game.state!="recovery":
+            fail("stalemate before 75% didn't offer rescue");return
     game._start_level(0,2)
     var before:=QuestRules.remaining(game.board)
     game._shuffle()

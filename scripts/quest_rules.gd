@@ -199,3 +199,86 @@ static func certified_solution(world: int,level: int) -> bool:
         board[b]=v
         if resolve(board,locks,types)<3:return false
     return remaining(board)==0
+
+static func certified_next_move(world: int, level: int, tiles: Array[int],locks: Array[int],seal_types: Array[int]) -> Vector2i:
+    # If the player is still following the level's certified solution,
+    # offer the next *proven* move, not a greedy short-term match.
+    var entry:=generate(world,level)
+    if entry.is_empty():return Vector2i(-1,-1)
+    var state: Array[int]=entry["board"].duplicate()
+    var seals: Array[int]=entry["locks"].duplicate()
+    var kinds: Array[int]=entry["seal_types"].duplicate()
+    for pair_data in entry["solution"]:
+        var pair: Array=pair_data
+        var a:=int(pair[0])
+        var b:=int(pair[1])
+        if state==tiles and seals==locks and kinds==seal_types:
+            return Vector2i(a,b)
+        if not can_match(state,a,b,seals):
+            break
+        var old:=state[a]
+        state[a]=state[b]
+        state[b]=old
+        resolve(state,seals,kinds)
+    return Vector2i(-1,-1)
+
+static func _move_result(tiles: Array[int],locks: Array[int],seal_types: Array[int],pair: Vector2i) -> Dictionary:
+    var result_board: Array[int]=tiles.duplicate()
+    var result_locks: Array[int]=locks.duplicate()
+    var result_types: Array[int]=seal_types.duplicate()
+    var old:=result_board[pair.x]
+    result_board[pair.x]=result_board[pair.y]
+    result_board[pair.y]=old
+    var n:=resolve(result_board,result_locks,result_types)
+    return {"board":result_board,"locks":result_locks,"seal_types":result_types,"removed":n}
+
+static func recommend_move(world: int,level: int,tiles: Array[int],locks: Array[int],seal_types: Array[int],quest_mode: bool=true) -> Vector2i:
+    var options:=legal_moves(tiles,locks)
+    if options.is_empty():return Vector2i(-1,-1)
+    if not quest_mode:return options[0]
+    var proof:=certified_next_move(world,level,tiles,locks,seal_types)
+    if proof.x>=0 and options.has(proof):
+        return proof
+    # For off-certificate states, look ahead one additional move and penalize
+    # deadlocks. This is a bounded heuristic, not a guarantee of solvability.
+    var best: Vector2i=options[0]
+    var best_score: float=-INF
+    for pair in options:
+        var first:=_move_result(tiles,locks,seal_types,pair)
+        var first_board: Array[int]=first["board"]
+        var first_locks: Array[int]=first["locks"]
+        var first_types: Array[int]=first["seal_types"]
+        var first_removed:=int(first["removed"])
+        var next_options:=legal_moves(first_board,first_locks)
+        var best_second:=0
+        for next_index in range(mini(16,next_options.size())):
+            var follow: Vector2i=next_options[next_index]
+            var sim:=_move_result(first_board,first_locks,first_types,follow)
+            best_second=maxi(best_second,int(sim["removed"]))
+        var score:=float(first_removed)*100.0+float(best_second)*80.0
+        score+=float(next_options.size())*.8
+        if remaining(first_board)==0:score+=200000.0
+        elif next_options.is_empty():score-=10000.0
+        if score>best_score:
+            best_score=score
+            best=pair
+    return best
+
+static func recovery_shuffle(tiles: Array[int],locks: Array[int]) -> Array[int]:
+    # Rescue never spawns fresh gems, consumes a charge, or claims that
+    # an arbitrary remaining layout must be solvable.
+    var movable: Array[int]=[]
+    var values: Array[int]=[]
+    for i in range(tiles.size()):
+        if tiles[i]>=0 and (locks.is_empty() or locks[i]==0):
+            movable.append(i)
+            values.append(tiles[i])
+    if values.size()<3:return []
+    for attempt in range(350):
+        values.shuffle()
+        var candidate: Array[int]=tiles.duplicate()
+        for j in range(movable.size()):
+            candidate[movable[j]]=values[j]
+        if scan(candidate).is_empty() and not legal_moves(candidate,locks).is_empty():
+            return candidate
+    return []

@@ -1,8 +1,12 @@
 # Runefall
 
-**v0.6.1: Runefall Rebrand + Installer Verification** · Godot 4.7.2 · Android · Offline
+**v0.6.2: Fair Quest Update** · Godot 4.7.2 · Android · Offline
 
 A gemstone-and-glyph match-3 adventure with four themed worlds: Runes, Egypt, East Asia, and Mixed. The new visual identity is **Runefall** with the tagline **Match. Discover. Awaken.**. The internal package ID is intentionally unchanged for continuity.
+
+## Fair Quest in v0.6.2
+
+Quest levels now pass at **75% cleared (1 star)**, award **2 stars at 85%** and **3 stars for 100%**. Qualified players can claim victory or continue. A deadlocked level at or above 75% is a win; below 75%, one free rescue is offered. Puzzle-aware hints prioritize known solutions. The new release preserves the same Android app IDs and save format as v0.6.1. **No ads or purchases are enabled.** See [v0.6.2 release notes](docs/v0.6.2-release-notes.md).
 
 ## New in v0.6
 
