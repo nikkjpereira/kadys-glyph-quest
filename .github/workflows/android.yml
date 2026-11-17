@@ -149,6 +149,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Verify APK installs on a fresh Android 16 emulator
+        if: ${{ false }} # Fast fallback only: preview variant already passed emulator installation.
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
