@@ -154,9 +154,10 @@ func _ready() -> void:
         art["booster_%d" % i] = load("res://assets/v03/booster_%d.png" % i) as Texture2D
     art["undo"] = load("res://assets/v04/undo.png") as Texture2D
     art["stone"] = load("res://assets/v04/stone.png") as Texture2D
-    for item in ["tap", "match", "win", "fail"]:
+    for item in ["tap", "match", "win", "fail", "stone", "seal", "combo", "relic", "land", "ice"]:
         var player := AudioStreamPlayer.new()
-        player.stream = load("res://assets/audio/" + item + ".wav")
+        var sound_path: String="res://assets/audio/v06/" + item + ".wav" if item in ["stone","seal","combo","relic","land","ice"] else "res://assets/audio/" + item + ".wav"
+        player.stream = load(sound_path)
         player.volume_db = -7
         add_child(player)
         sound_players[item] = player
@@ -1207,8 +1208,10 @@ func _resolve() -> void:
         var result: Dictionary = QuestRules.adjacent_obstacles(board,locks,hits,seal_types)
         for cracked in result["cracked"]:
             _emit_fx(int(cracked),GOLD)
+        if not result["cracked"].is_empty():_play_sound("stone")
         for unlocked in result["unlocked"]:
             _emit_fx(int(unlocked),Color("#a5edff"))
+        if not result["unlocked"].is_empty():_play_sound("seal")
         _start_fall_animation(hit_map)
         for idx in hits:
             board[idx] = QuestRules.EMPTY
@@ -1225,7 +1228,9 @@ func _resolve() -> void:
         popups.append({"text": "+%s" % points, "life": 1.0, "pos": Vector2(360, 735)})
         if combo > 1:
             popups.append({"text":"COMBO x%s!" % combo,"life":1.0,"pos":Vector2(360,790)})
-        _play_sound("match")
+            _play_sound("combo")
+        else:
+            _play_sound("match")
         _vibrate(22)
         save.data["lifetime_matches"] = int(save.data.get("lifetime_matches", 0)) + total
 
@@ -1326,6 +1331,7 @@ func _finish_or_save() -> void:
             save.record_victory(world_index,level,score,earned_stars)
             victory_spark_age=1.2
             _play_sound("win")
+            if level%3==0:_play_sound("relic")
             _vibrate(70)
         elif _find_hint().is_empty():
             state="failure"
@@ -1488,6 +1494,7 @@ func _start_fall_animation(hits: Dictionary) -> void:
                     })
             bottom = top - 1
     fall_age = 0.0 if not fall_ghosts.is_empty() else 1.0
+    if not fall_ghosts.is_empty():_play_sound("land")
 
 
 func _draw_nav_icons() -> void:
