@@ -56,7 +56,7 @@ jobs:
       - name: Capture actual Godot screens for visual QA
         run: |
           mkdir -p build/visual
-          timeout 35s xvfb-run -a -s "-screen 0 1024x2000x24" godot --path . --resolution 720x1440 --rendering-method gl_compatibility --script res://tools/capture.gd
+          timeout 35s xvfb-run -a -s "-screen 0 2400x2600x24" godot --path . --resolution 720x1440 --rendering-method gl_compatibility --script res://tools/capture.gd
           test -s build/visual/menu.png
           test -s build/visual/runes.png
           test -s build/visual/settings.png
@@ -67,6 +67,11 @@ jobs:
           test -s build/visual/egypt.png
           test -s build/visual/asia.png
           test -s build/visual/mixed.png
+          test -s build/visual/phone_tall.png
+          test -s build/visual/tablet_portrait.png
+          test -s build/visual/tablet_landscape.png
+          test -s build/visual/tablet_landscape_menu.png
+          test -s build/visual/relic_collection.png
 
       - name: Upload visual QA screenshots
         if: always()
