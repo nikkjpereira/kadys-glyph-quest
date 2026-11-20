@@ -117,10 +117,16 @@ func _ready() -> void:
     mode = str(save.data.get("mode", "quest"))
     if mode not in ["quest", "arcade"]:
         mode = "quest"
-    ui_font = ThemeDB.fallback_font
+    # Explicit vector fonts and MSDF prevent fuzzy glyphs at non-integer
+    # Android tablet scales. Fallback remains available offline.
+    ui_font = load("res://assets/fonts/NotoSans-Regular.ttf") as Font
+    if ui_font == null:
+        ui_font = ThemeDB.fallback_font
+    _configure_font_for_tablet(ui_font)
     display_font = load("res://assets/v03/DejaVuSerif-Bold.ttf") as Font
     if display_font == null:
         display_font = ui_font
+    _configure_font_for_tablet(display_font)
     for filename in [
         "NotoSansRunic-Regular.ttf",
         "NotoSansEgyptianHieroglyphs-Regular.ttf",
@@ -132,6 +138,7 @@ func _ready() -> void:
         if ResourceLoader.exists(path):
             var loaded := load(path) as Font
             if loaded != null:
+                _configure_font_for_tablet(loaded)
                 f = loaded
         glyph_fonts.append(f)
     for i in range(6):
@@ -185,6 +192,16 @@ func _ready() -> void:
     if active.has("world"):
         world_index = clampi(int(active.get("world", 0)), 0, 3)
     queue_redraw()
+
+func _configure_font_for_tablet(font: Font) -> void:
+    if font is FontFile:
+        var scalable: FontFile=font as FontFile
+        scalable.multichannel_signed_distance_field=true
+        scalable.msdf_size=72
+        scalable.msdf_pixel_range=12
+        scalable.generate_mipmaps=true
+        scalable.subpixel_positioning=TextServer.SUBPIXEL_POSITIONING_AUTO
+
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_CLOSE_REQUEST:
@@ -433,7 +450,11 @@ func _label(value: String, x: float, y: float, size: int, color: Color = CREAM, 
     var draw_x := x
     if center:
         draw_x -= f.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, point_size).x / 2.0
-    draw_string(f, Vector2(draw_x+1,y+3), value, HORIZONTAL_ALIGNMENT_LEFT, -1, point_size, Color(0.016,0.008,0.03,0.97))
+    # Keep a precise, restrained shadow. The previous 1x3-pixel offset
+    # made small tablet labels look double-printed when fractionally scaled.
+    if size>=25:
+        draw_string(f, Vector2(draw_x+0.6,y+1.25), value, HORIZONTAL_ALIGNMENT_LEFT, -1,
+            point_size, Color(.016,.008,.03,.68))
     draw_string(f, Vector2(draw_x,y), value, HORIZONTAL_ALIGNMENT_LEFT, -1, point_size, color)
 
 func _fancy(value: String, x: float, y: float, size: int, center: bool = true) -> void:
@@ -1796,10 +1817,16 @@ func _draw_live_gem(rect: Rect2, tile: int, index: int) -> void:
     var glyph: String = SYMBOLS[world_index][tile]
     var gx:=rect.get_center().x
     var gy:=rect.position.y+50
-    _label(glyph,gx+1.4,gy+2.1,41,Color(.05,.035,.19,.85),true,_glyph_font(tile))
-    if save.pref("reactive_light") and not save.pref("low_effects"):
-        _label(glyph,gx,gy,41,Color(1,1,.95,.28),true,_glyph_font(tile))
-    _label(glyph,gx,gy,41,Color("#fff9ec"),true,_glyph_font(tile))
+    # One sharp glyph pass over a thin outline: overlapping 3 label passes
+    # created apparent blur around rune strokes on high-DPI tablets.
+    var rune_font:Font=_glyph_font(tile)
+    var rune_size:=41
+    var runewidth:=rune_font.get_string_size(glyph,HORIZONTAL_ALIGNMENT_LEFT,-1,rune_size).x
+    var rune_pos:=Vector2(gx-runewidth*.5,gy)
+    draw_string_outline(rune_font,rune_pos,glyph,HORIZONTAL_ALIGNMENT_LEFT,-1,rune_size,2,
+        Color(.025,.018,.10,.9))
+    draw_string(rune_font,rune_pos,glyph,HORIZONTAL_ALIGNMENT_LEFT,-1,rune_size,
+        Color("#fff9ec"))
     if save.pref("gem_shimmer") and not save.pref("reduce_motion"):
         var reflected:=V07Visuals.gem_specular(clock,index,save.pref("low_effects"),save.pref("reduce_motion"))
         if reflected>.10:

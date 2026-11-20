@@ -50,6 +50,12 @@ func _run()->void:
     await RenderingServer.frame_post_draw
     if not game.draw_layout_landscape or not _snap("v07_tablet_landscape_restored"):
         push_error("Couldn't capture v0.7 landscape");quit(1);return
+    root.size=Vector2i(864,1536)
+    root.content_scale_size=Vector2i(864,1536)
+    for i in range(15):await process_frame
+    await RenderingServer.frame_post_draw
+    if not _snap("v071_tablet_864x1536"):
+        push_error("Couldn't capture actual tablet screenshot dimensions");quit(1);return
     root.size=Vector2i(1200,1920)
     root.content_scale_size=Vector2i(1200,1920)
     for i in range(15):await process_frame

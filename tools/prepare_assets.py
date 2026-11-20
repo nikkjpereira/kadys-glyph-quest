@@ -9,13 +9,14 @@ ROOT = Path(__file__).resolve().parents[1]
 FONTS = ROOT / "assets" / "fonts"
 BASE = "https://raw.githubusercontent.com/google/fonts/main/ofl/"
 SOURCES = {
+    "NotoSans-Regular.ttf": "notosans/NotoSans%5Bwdth%2Cwght%5D.ttf",
     "NotoSansRunic-Regular.ttf": "notosansrunic/NotoSansRunic-Regular.ttf",
     "NotoSansEgyptianHieroglyphs-Regular.ttf": "notosansegyptianhieroglyphs/NotoSansEgyptianHieroglyphs-Regular.ttf",
     "NotoSansJP.ttf": "notosansjp/NotoSansJP%5Bwght%5D.ttf",
     "NotoSansKR.ttf": "notosanskr/NotoSansKR%5Bwght%5D.ttf",
 }
 LICENSE_FOLDERS = [
-    "notosansrunic", "notosansegyptianhieroglyphs", "notosansjp", "notosanskr"
+    "notosans", "notosansrunic", "notosansegyptianhieroglyphs", "notosansjp", "notosanskr"
 ]
 
 

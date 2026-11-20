@@ -22,6 +22,13 @@ func _run() -> void:
     var game=load("res://scenes/Main.tscn").instantiate()
     root.add_child(game)
     game.save.reset_progress()
+    if not (game.ui_font is FontFile and (game.ui_font as FontFile).multichannel_signed_distance_field):
+        failed("Latin interface font is not MSDF");return
+    if not (game.display_font is FontFile and (game.display_font as FontFile).multichannel_signed_distance_field):
+        failed("Fantasy headings are not MSDF");return
+    for font in game.glyph_fonts:
+        if font is FontFile and not (font as FontFile).multichannel_signed_distance_field:
+            failed("At least one ancient glyph font isn't MSDF");return
     game.save.data["tutorial_done_v06"]=true
     game.mode="quest"
     if game.gems.size()!=6:
