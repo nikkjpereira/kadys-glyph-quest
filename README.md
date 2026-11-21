@@ -4,6 +4,14 @@
 
 A gemstone-and-glyph match-3 adventure with four themed worlds: Runes, Egypt, East Asia, and Mixed. The new visual identity is **Runefall** with the tagline **Match. Discover. Awaken.**. The internal package ID is intentionally unchanged for continuity.
 
+## Planned v0.7.5 — combined feature release
+
+The former v0.7.2 cleanup is bundled into **v0.7.5**: relic unlock animations,
+restoration feedback, cleaner Home navigation, background/tablet artwork fixes,
+special gems, world maps and offline achievements. Existing saves and Android
+app IDs must remain compatible. Monetization remains for v0.8.0.
+See [the v0.7.5 combined implementation plan](docs/v0.7.5-combined-release-plan.md).
+
 ## New visuals in v0.7.0
 
 - Six newly generated 256px multi-faceted gemstone materials with colored beveled edges, glass highlights and internal caustics.
