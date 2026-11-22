@@ -27,6 +27,8 @@ jobs:
       NOTIFY_BASE_URL: ${{ vars.NOTIFY_BASE_URL || 'https://ntfy.sh' }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Send ntfy message
         run: python3 .github/scripts/github-ntfy.py
