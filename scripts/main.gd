@@ -158,7 +158,7 @@ func _ready() -> void:
         gems.append(load("res://assets/v07/gem_%s.png" % i) as Texture2D)
     for item in ["runes", "egypt", "asia", "mixed"]:
         backgrounds.append(load("res://assets/v03/%s_scene.png" % item) as Texture2D)
-    scene_bg = load("res://assets/v03/menu_scene.png") as Texture2D
+    scene_bg = load("res://assets/v075/menu_scene_clean.png") as Texture2D
     for item in ["title", "button", "ribbon", "parchment", "medallion", "spark"]:
         var file_name: String = "hud_medallion" if item == "medallion" else ("title_plaque" if item == "title" else ("button_plaque" if item == "button" else ("magic_spark" if item == "spark" else item)))
         art[item] = load("res://assets/v03/" + file_name + ".png") as Texture2D

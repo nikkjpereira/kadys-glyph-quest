@@ -1,15 +1,12 @@
 # Runefall
 
-**v0.7.0: Living Gems + Restored Worlds Update** · Godot 4.7.2 · Android · Offline
+**v0.7.5: Combined Rewards, Navigation, Special Gems & Progression Update** · Godot 4.7.2 · Android · Offline
 
 A gemstone-and-glyph match-3 adventure with four themed worlds: Runes, Egypt, East Asia, and Mixed. The new visual identity is **Runefall** with the tagline **Match. Discover. Awaken.**. The internal package ID is intentionally unchanged for continuity.
 
-## Planned v0.7.5 — combined feature release
+## v0.7.5 — Combined feature release in validation
 
-The former v0.7.2 cleanup is bundled into **v0.7.5**: relic unlock animations,
-restoration feedback, cleaner Home navigation, background/tablet artwork fixes,
-special gems, world maps and offline achievements. Existing saves and Android
-app IDs must remain compatible. Monetization remains for v0.8.0.
+The former v0.7.2 cleanup is bundled into **v0.7.5**. The feature branch implements relic unlock animations, restoration feedback, cleaner Home navigation, corrected menu backgrounds, powered gems (double-tap to activate), connected world maps and eight offline achievements. The gameplay and signing pipeline are being validated before publishing APKs. Existing saves and package IDs remain compatible. Monetization is still scheduled for v0.8.0.
 See [the v0.7.5 combined implementation plan](docs/v0.7.5-combined-release-plan.md).
 
 ## New visuals in v0.7.0

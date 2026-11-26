@@ -18,6 +18,20 @@ func _run()->void:
     for i in range(9):await process_frame
     await RenderingServer.frame_post_draw
     if not snap("world_map_phone"):quit(1);return
+    game.mode="quest"
+    game._start_level(0,2)
+    var enchanted:int=-1
+    for idx in range(64):
+        if game.board[idx]>=0 and game.locks[idx]==0:
+            enchanted=idx
+            break
+    if enchanted<0:
+        push_error("No gem for special screenshot");quit(1);return
+    game.powers[enchanted]=3
+    for i in range(9):await process_frame
+    await RenderingServer.frame_post_draw
+    if not snap("special_gem_phone"):quit(1);return
+    game.state="menu"
     game.save.record_victory(0,3,1500,2)
     if not game._offer_relic_reward("home"):
         push_error("Could not produce relic reveal")
@@ -29,6 +43,10 @@ func _run()->void:
     for i in range(9):await process_frame
     await RenderingServer.frame_post_draw
     if not snap("collection_phone"):quit(1);return
+    game.state="achievements"
+    for i in range(9):await process_frame
+    await RenderingServer.frame_post_draw
+    if not snap("achievements_phone"):quit(1);return
     root.size=Vector2i(864,1536)
     root.content_scale_size=Vector2i(864,1536)
     game.state="menu"
