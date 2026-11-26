@@ -109,7 +109,7 @@ static func adjacent_obstacles(tiles: Array[int],locks: Array[int], hits: Array[
         if seal_types.size()==64:seal_types[idx]=0
     return {"cracked":cracked.keys(),"unlocked":unlocked.keys()}
 
-static func settle(tiles: Array[int],locks: Array[int] = [],seal_types: Array[int] = []) -> void:
+static func settle(tiles: Array[int],locks: Array[int] = [],seal_types: Array[int] = [],powers: Array[int] = []) -> void:
     for col in range(COLS):
         var bottom:=ROWS-1
         while bottom>=0:
@@ -122,22 +122,26 @@ static func settle(tiles: Array[int],locks: Array[int] = [],seal_types: Array[in
             var values: Array[int] = []
             var seals: Array[int] = []
             var kinds: Array[int] = []
+            var magic: Array[int] = []
             for row in range(top+1,bottom+1):
                 var idx:=row*COLS+col
                 if tiles[idx]>=0:
                     values.append(tiles[idx])
                     if not locks.is_empty():seals.append(locks[idx])
                     if seal_types.size()==64:kinds.append(seal_types[idx])
+                    if powers.size()==64:magic.append(powers[idx])
             for row in range(top+1,bottom+1):
                 var idx:=row*COLS+col
                 tiles[idx]=EMPTY
                 if not locks.is_empty():locks[idx]=0
                 if seal_types.size()==64:seal_types[idx]=0
+                if powers.size()==64:powers[idx]=0
             for k in range(values.size()):
                 var idx: int=(bottom-values.size()+1+k)*COLS+col
                 tiles[idx]=values[k]
                 if not locks.is_empty():locks[idx]=seals[k]
                 if seal_types.size()==64:seal_types[idx]=kinds[k]
+                if powers.size()==64:powers[idx]=magic[k]
             bottom=top-1
 
 static func resolve(tiles: Array[int],locks: Array[int] = [],seal_types: Array[int] = []) -> int:
@@ -282,3 +286,73 @@ static func recovery_shuffle(tiles: Array[int],locks: Array[int]) -> Array[int]:
         if scan(candidate).is_empty() and not legal_moves(candidate,locks).is_empty():
             return candidate
     return []
+
+# Special classifications: 1=row, 2=column, 3=wildcard, 4=area blast.
+# This checks actual contiguous runs rather than a combined hit count.
+static func special_kind(tiles: Array[int]) -> int:
+    var rows4:=false
+    var cols4:=false
+    var rows5:=false
+    var cols5:=false
+    var crossing:=false
+    for row in range(8):
+        for col in range(8):
+            var idx:int=row*8+col
+            var value:int=tiles[idx]
+            if value<0:continue
+            var horizontal:=1
+            for c in range(col-1,-1,-1):
+                if tiles[row*8+c]!=value:break
+                horizontal+=1
+            for c in range(col+1,8):
+                if tiles[row*8+c]!=value:break
+                horizontal+=1
+            var vertical:=1
+            for rr in range(row-1,-1,-1):
+                if tiles[rr*8+col]!=value:break
+                vertical+=1
+            for rr in range(row+1,8):
+                if tiles[rr*8+col]!=value:break
+                vertical+=1
+            if horizontal>=3 and vertical>=3:crossing=true
+            if horizontal>=5:rows5=true
+            if vertical>=5:cols5=true
+            if horizontal>=4:rows4=true
+            if vertical>=4:cols4=true
+    if crossing:return 4
+    if rows5 or cols5:return 3
+    if rows4:return 1
+    if cols4:return 2
+    return 0
+
+static func special_anchor(tiles:Array[int],hits:Array[int],locks:Array[int]=[]) -> int:
+    # An existing surviving gem receives the power. No replacement gems.
+    var priority: Array[int]=[]
+    var visited: Dictionary={}
+    for idx in hits:
+        for n in neighbors(idx):
+            if hits.has(n) or visited.has(n):continue
+            visited[n]=true
+            if tiles[n]>=0 and (locks.is_empty() or locks[n]==0):
+                priority.append(n)
+    if priority.is_empty():return -1
+    return priority[0]
+
+static func special_targets(tiles:Array[int],idx:int,kind:int)->Array[int]:
+    var result:Array[int]=[]
+    if idx<0 or idx>=64 or tiles[idx]<0:return result
+    var row:int=int(idx/8)
+    var col:int=idx%8
+    for i in range(64):
+        if tiles[i]<0:continue
+        var same_row:bool=int(i/8)==row
+        var same_col:bool=i%8==col
+        var near:bool=absi(int(i/8)-row)<=1 and absi(i%8-col)<=1
+        var include:bool=false
+        match kind:
+            1:include=same_row
+            2:include=same_col
+            3:include=tiles[i]==tiles[idx]
+            4:include=near
+        if include:result.append(i)
+    return result

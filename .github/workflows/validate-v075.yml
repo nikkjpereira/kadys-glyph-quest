@@ -1,0 +1,54 @@
+name: Runefall v0.7.5 Feature Validation
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/runefall-v0.7.5-navigation-rewards
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Godot 4.7.2
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.7.2
+          use-dotnet: false
+      - name: Prepare asset fonts
+        run: python3 tools/prepare_assets.py
+      - name: Import and script validation
+        run: |
+          mkdir -p build/visual
+          godot --headless --path . --editor --import 2>&1 | tee build/import-v075.log
+          if grep -E "SCRIPT ERROR|Parse Error|Failed to load script" build/import-v075.log; then exit 1; fi
+      - name: Existing gameplay tests
+        run: |
+          timeout 70s godot --headless --path . --script res://tests/smoke.gd 2>&1 | tee build/smoke-v075.log
+          grep -q "PASS: V0.6 DENSE CERTIFIED PUZZLES" build/smoke-v075.log
+          timeout 70s godot --headless --path . --script res://tests/fair_quest.gd 2>&1 | tee build/fair-v075.log
+          grep -q "PASS: V0.6.2 FAIR QUEST" build/fair-v075.log
+      - name: v0.7.5 persistent rewards
+        run: |
+          timeout 50s godot --headless --path . --script res://tests/rewards_v075.gd 2>&1 | tee build/rewards-v075.log
+          grep -q "PASS: V0.7.5 REWARDS" build/rewards-v075.log
+          if grep -E "SCRIPT ERROR|V075 FAIL" build/rewards-v075.log; then exit 1; fi
+      - name: Screenshot phone and tablet
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb >/dev/null
+          timeout 110s xvfb-run -a -s "-screen 0 2200x2000x24" godot --path . --resolution 720x1440 --rendering-method gl_compatibility --script res://tools/capture_v075.gd 2>&1 | tee build/screenshots-v075.log
+          grep -q "PASS: V0.7.5 UI CAPTURE" build/screenshots-v075.log
+          for name in home_phone home_tablet home_landscape world_map_phone map_landscape relic_found_phone relic_found_landscape collection_phone; do
+            test -s "build/visual/v075_$name.png"
+          done
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Runefall-v075-Visual-QA
+          path: |
+            build/visual/*.png
+            build/*.log

@@ -45,7 +45,7 @@ func _run()->void:
     if ice_total<8 or chain_total<6 or cracked_total<6:
         fail("new obstacles missing");return
     var brand=load("res://scripts/brand_config.gd")
-    if brand.DISPLAY_NAME!="Runefall" or brand.VERSION!="0.7.1":
+    if brand.DISPLAY_NAME!="Runefall" or brand.VERSION!="0.7.5":
         fail("Runefall branding metadata mismatch");return
     var game=load("res://scenes/Main.tscn").instantiate()
     root.add_child(game)
@@ -105,7 +105,7 @@ func _run()->void:
     prior.load_all()
     if prior.unlocked_level(0)<2:
         fail("progress not saved");return
-    if prior.data["schema"]!=3:
+    if prior.data["schema"]!=4:
         fail("save schema not migrated");return
     prior.toggle_pref("gem_shimmer")
     var restored=SaveData.new()
