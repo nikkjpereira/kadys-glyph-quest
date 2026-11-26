@@ -105,7 +105,7 @@ func _run()->void:
     prior.load_all()
     if prior.unlocked_level(0)<2:
         fail("progress not saved");return
-    if prior.data["schema"]!=3:
+    if prior.data["schema"]!=4:
         fail("save schema not migrated");return
     prior.toggle_pref("gem_shimmer")
     var restored=SaveData.new()
