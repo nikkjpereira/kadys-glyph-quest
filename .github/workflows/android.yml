@@ -71,8 +71,15 @@ jobs:
           grep -q "PASS: V0.7.5 REWARDS" build/rewards-v075.log
           if grep -E "SCRIPT ERROR|V075 FAIL" build/rewards-v075.log; then exit 1; fi
 
+      - name: Validate special gem mechanics and original Quest proofs
+        run: |
+          timeout 70s godot --headless --path . --script res://tests/specials_v075.gd 2>&1 | tee build/specials-v075.log
+          grep -q "PASS: V0.7.5 SPECIALS" build/specials-v075.log
+          if grep -E "SCRIPT ERROR|V075 SPECIAL FAIL" build/specials-v075.log; then exit 1; fi
+
       - name: Capture v0.7.5 home, map and reward presentation
         run: |
+          mkdir -p build/visual
           timeout 120s xvfb-run -a -s "-screen 0 2300x2000x24" godot --path . --resolution 720x1440 --rendering-method gl_compatibility --script res://tools/capture_v075.gd 2>&1 | tee build/capture-v075.log
           grep -q "PASS: V0.7.5 UI CAPTURE" build/capture-v075.log
           for image in home_phone home_tablet home_landscape world_map_phone map_landscape relic_found_phone relic_found_landscape collection_phone; do

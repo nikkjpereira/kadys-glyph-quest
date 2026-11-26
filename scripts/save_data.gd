@@ -34,6 +34,7 @@ func reset_defaults() -> void:
         "relic_seen": {},
         "pending_rewards": [],
         "achievements": {},
+        "achievement_seen": {},
         "restoration": [0,0,0,0],
         "tutorial_done_v06": false,
         "unlocked": [1, 1, 1, 1],
@@ -79,6 +80,7 @@ func load_all() -> void:
     if typeof(data["relics"])!=TYPE_DICTIONARY:data["relics"]={}
     if typeof(data["relic_seen"])!=TYPE_DICTIONARY:data["relic_seen"]={}
     if typeof(data["achievements"])!=TYPE_DICTIONARY:data["achievements"]={}
+    if typeof(data["achievement_seen"])!=TYPE_DICTIONARY:data["achievement_seen"]={}
     if typeof(data["pending_rewards"])!=TYPE_ARRAY:data["pending_rewards"]=[]
     if typeof(data["restoration"])!=TYPE_ARRAY or data["restoration"].size()!=4:
         data["restoration"]=[0,0,0,0]
@@ -153,6 +155,14 @@ func record_victory(world: int, level: int, score: int, stars: int) -> void:
     if stars==3:unlock_achievement("perfect_clear",false)
     if relic_total()>=1:unlock_achievement("first_relic",false)
     if world_stage(world)==4:unlock_achievement("restored_world",false)
+    if completion_count()>=10:unlock_achievement("ten_quests",false)
+    var explored:int=0
+    for w in range(4):
+        for check_level in range(1,13):
+            if int(best_result(w,check_level).get("stars",0))>0:
+                explored+=1
+                break
+    if explored>=4:unlock_achievement("all_worlds",false)
     data["total_stars"] = total_stars()
     data["current"] = {}
     save_all()
@@ -189,6 +199,17 @@ func unlock_achievement(id:String,persist:bool=true)->bool:
     data["achievements"][id]=true
     if persist:save_all()
     return true
+
+func unseen_achievement_count()->int:
+    var count:int=0
+    for id in data.get("achievements",{}):
+        if not bool(data.get("achievement_seen",{}).get(id,false)):count+=1
+    return count
+
+func mark_achievements_seen()->void:
+    for id in data.get("achievements",{}):
+        data["achievement_seen"][id]=true
+    save_all()
 
 func completion_count() -> int:
     return data.get("levels",{}).size()

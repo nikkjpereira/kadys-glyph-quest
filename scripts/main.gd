@@ -15,6 +15,12 @@ const BASE_SIZE := Vector2(720, 1440)
 const LEVEL_COUNT := 12
 const WORLD_NAMES := ["RUNIC HALL", "TEMPLE OF THE SUN", "JADE GARDENS", "ARCANE ARCHIVE"]
 const WORLD_SHORT := ["RUNES", "EGYPT", "EAST ASIA", "MIXED"]
+const ACHIEVEMENT_IDS := ["first_match","first_victory","perfect_clear","combo_master",
+    "first_relic","restored_world","ten_quests","all_worlds"]
+const ACHIEVEMENT_TITLES := ["FIRST SPARK","QUEST BEGINS","PERFECT CLEAR","COMBO MASTER",
+    "RELIC HUNTER","WORLD RESTORER","TEN QUESTS","WORLD EXPLORER"]
+const ACHIEVEMENT_DETAIL := ["Make a match","Complete a quest","Clear every gem","Trigger a cascade",
+    "Find any relic","Restore a whole world","Complete 10 quests","Win in all four worlds"]
 const WORLD_TAGLINES := [
     "The Viking Stones",
     "Mysteries of the Nile",
@@ -54,6 +60,7 @@ var fall_ghosts: Array[Dictionary] = []
 var fall_age := 1.0
 var level := 1
 var board: Array[int] = []
+var powers: Array[int] = [] # 1 row, 2 column, 3 wildcard, 4 area
 var locks: Array[int] = []
 var seal_types: Array[int] = []
 var current_relic := ""
@@ -340,6 +347,7 @@ func _draw() -> void:
             "relic_reveal":_draw_relic_reveal(true)
             "settings","settings_fx":_draw_tablet_settings()
             "progress":_draw_tablet_progress()
+            "achievements":_draw_achievements(true)
             "reset_confirm":_draw_tablet_settings()
     elif draw_layout_tablet_portrait and state in ["playing","paused","victory","failure","recovery","tutorial"]:
         _background()
@@ -353,6 +361,7 @@ func _draw() -> void:
             "settings":_draw_settings()
             "settings_fx":_draw_effects_settings()
             "progress":_draw_progress()
+            "achievements":_draw_achievements(false)
             "collection":_draw_collection()
             "relic_reveal":_draw_relic_reveal(false)
             "playing","paused","victory","failure","recovery","tutorial":
@@ -630,7 +639,34 @@ func _draw_progress() -> void:
     for id in achievements:
         if bool(save.data["achievements"].get(id,false)):count+=1
     _label("ACHIEVEMENTS: %s / %s" % [count,achievements.size()],360,1223,21,GOLD,true)
-    _label("NO LOGIN • YOUR PROGRESS SAVES OFFLINE",360,1293,16,CREAM,true)
+    _button(Rect2(113,1260,495,70),"ACHIEVEMENTS",false,24)
+    if save.unseen_achievement_count()>0:
+        _label("NEW %s" % save.unseen_achievement_count(),601,1261,17,Color("#ff9bb9"),true)
+
+func _draw_achievements(wide:bool=false)->void:
+    var width:float=1600.0 if wide else 720.0
+    var center:float=width*.5
+    if wide:
+        _fancy("ACHIEVEMENTS",center,88,44)
+        _button(Rect2(50,26,200,74),"BACK",false,24)
+        _label("Explore all four worlds • Collect eight achievements",center,157,21,CREAM,true)
+    else:
+        _title("ACHIEVEMENTS","Your discoveries and milestones")
+        _button(Rect2(48,225,154,64),"BACK")
+    for i in range(ACHIEVEMENT_IDS.size()):
+        var completed:bool=bool(save.data.get("achievements",{}).get(ACHIEVEMENT_IDS[i],false))
+        var col:int=i%4 if wide else i%2
+        var row:int=int(i/4) if wide else int(i/2)
+        var box:Rect2=Rect2(95+col*353,233+row*284,328,240) if wide else Rect2(44+col*327,363+row*218,303,196)
+        _panel(box,Color("#45315d") if completed else Color("#262139"),true,.95)
+        _label("✦" if completed else "◇",box.get_center().x,box.position.y+66,47,GOLD if completed else MUTED,true)
+        _fancy(ACHIEVEMENT_TITLES[i],box.get_center().x,box.position.y+111,20 if not wide else 22)
+        _label(ACHIEVEMENT_DETAIL[i],box.get_center().x,box.position.y+151,16,CREAM if completed else MUTED,true)
+        _label("UNLOCKED" if completed else "LOCKED",box.get_center().x,box.end.y-18,16,GOLD if completed else MUTED,true)
+    var achieved:int=0
+    for id in ACHIEVEMENT_IDS:
+        if bool(save.data.get("achievements",{}).get(id,false)):achieved+=1
+    _label("%s / %s ACHIEVEMENTS" % [achieved,ACHIEVEMENT_IDS.size()],center,836 if wide else 1289,23,GOLD,true)
 
 func _draw_settings() -> void:
     _title("SETTINGS","The way you like to play")
@@ -993,6 +1029,11 @@ func _gesture(start: Vector2, finish: Vector2) -> void:
         "progress":
             if _inside(p,48,225,154,64):
                 state="menu"
+            elif _inside(p,113,1260,495,70):
+                state="achievements"
+                save.mark_achievements_seen()
+        "achievements":
+            if _inside(p,48,225,154,64):state="progress"
         "collection":
             if _inside(p,48,225,154,64):
                 state="menu"
@@ -1041,6 +1082,8 @@ func _back() -> void:
             state="playing"
         "levels","progress","collection":
             state="menu"
+        "achievements":
+            state="progress"
         "settings":
             state=settings_return
         "settings_fx":
@@ -1227,7 +1270,10 @@ func _touch_game(start: Vector2, p: Vector2) -> void:
         _attempt_swap(selected, first)
         selected = -1
     else:
-        selected = -1 if selected == first else first
+        if selected==first and powers.size()==64 and powers[first]>0:
+            _activate_special(first)
+        else:
+            selected = -1 if selected == first else first
 
 func _board_index(p: Vector2) -> int:
     var delta := p-ORIGIN
@@ -1268,6 +1314,8 @@ func _configure_level(w: int, lvl: int) -> void:
     boosters_used=0
     locks.clear()
     seal_types.clear()
+    powers.resize(64)
+    powers.fill(0)
     current_relic=""
     impact_fx.clear()
     hammer_mode = false
@@ -1320,6 +1368,10 @@ func _resume_saved() -> bool:
     for value in current.get("seal_types",[]):
         seal_types.append(clampi(int(value),0,3))
     if seal_types.size()!=64:seal_types.resize(64);seal_types.fill(0)
+    powers.clear()
+    for value in current.get("powers",[]):
+        powers.append(clampi(int(value),0,4))
+    if powers.size()!=64:powers.resize(64);powers.fill(0)
     current_relic=str(current.get("relic",""))
     reference_moves=maxi(1,int(current.get("reference_moves",12)))
     boosters_used=maxi(0,int(current.get("boosters_used",0)))
@@ -1340,7 +1392,7 @@ func _resume_saved() -> bool:
             undo_history.append(item)
     state = "playing" if bool(save.data.get("tutorial_done_v06", false)) else "tutorial"
     _reset_idle()
-    if mode=="quest" and QuestRules.legal_moves(board,locks).is_empty():
+    if mode=="quest" and QuestRules.legal_moves(board,locks).is_empty() and not _has_usable_special():
         _finish_or_save()
     queue_redraw()
     return true
@@ -1350,7 +1402,7 @@ func _save_current() -> void:
         return
     save.set_current({
         "mode": mode,"board_version":6,"world": world_index, "level": level, "board": board.duplicate(),
-        "locks":locks.duplicate(),"seal_types":seal_types.duplicate(),"relic":current_relic,
+        "locks":locks.duplicate(),"seal_types":seal_types.duplicate(),"powers":powers.duplicate(),"relic":current_relic,
         "reference_moves":reference_moves,"boosters_used":boosters_used,
         "recovery_used":recovery_used,
         "score": score, "moves": moves_left, "moves_used": moves_used,
@@ -1398,10 +1450,18 @@ func _swap_values(a: int, b: int) -> void:
     var v := board[a]
     board[a] = board[b]
     board[b] = v
+    if powers.size()==64:
+        var magic:int=powers[a]
+        powers[a]=powers[b]
+        powers[b]=magic
 
 func _find_hint() -> Array[int]:
     var suggestion:=QuestRules.recommend_move(world_index,level,board,locks,seal_types,mode=="quest")
-    if suggestion.x<0:return []
+    if suggestion.x<0:
+        for i in range(powers.size()):
+            if powers[i]>0 and board[i]>=0 and (locks.is_empty() or locks[i]==0):
+                return [i,i]
+        return []
     return [suggestion.x,suggestion.y]
 
 func _attempt_swap(a: int, b: int) -> void:
@@ -1453,6 +1513,10 @@ func _resolve() -> void:
         var hits := _find_matches()
         if hits.is_empty():
             break
+        # Award an *existing surviving* neighboring gem; matches and proof
+        # state are unchanged unless the player voluntarily casts the power.
+        var magic_kind:int=QuestRules.special_kind(board)
+        var magic_anchor:int=QuestRules.special_anchor(board,hits,locks) if magic_kind>0 else -1
         combo += 1
         total += hits.size()
         var gain := hits.size() * 65 * combo
@@ -1478,8 +1542,13 @@ func _resolve() -> void:
         if not result["unlocked"].is_empty():_play_sound("seal")
         _start_fall_animation(hit_map)
         for idx in hits:
-            board[idx] = QuestRules.EMPTY
-        QuestRules.settle(board,locks,seal_types)
+            board[idx]=QuestRules.EMPTY
+            if powers.size()==64:powers[idx]=0
+        if magic_anchor>=0 and powers.size()==64:
+            powers[magic_anchor]=magic_kind
+            popups.append({"text":"SPECIAL RUNE CHARGED!",
+                "life":1.1,"pos":ORIGIN+Vector2(4*CELL,2*CELL)})
+        QuestRules.settle(board,locks,seal_types,powers)
         if mode == "arcade":
             # The refill mechanic is exclusive to Arcade.
             for col in range(COLS):
@@ -1498,6 +1567,44 @@ func _resolve() -> void:
             _play_sound("match")
         _vibrate(22)
         save.data["lifetime_matches"] = int(save.data.get("lifetime_matches", 0)) + total
+
+func _activate_special(index:int) -> void:
+    if state!="playing" or powers.size()!=64 or index<0 or index>=64:return
+    var kind:int=powers[index]
+    if kind<=0 or board[index]<0 or (locks.size()==64 and locks[index]>0):return
+    var victims:Array[int]=QuestRules.special_targets(board,index,kind)
+    if victims.is_empty():return
+    var stars_before:int=_eligible_stars()
+    _push_undo()
+    selected=-1
+    powers[index]=0
+    var hit_map:Dictionary={}
+    for victim in victims:
+        hit_map[victim]=true
+        _emit_fx(victim,GEM_COLORS[board[victim]])
+        if objective_type=="collect" and board[victim]==target_glyph:
+            collected+=1
+    _start_fall_animation(hit_map)
+    QuestRules.adjacent_obstacles(board,locks,victims,seal_types)
+    for victim in victims:
+        board[victim]=QuestRules.EMPTY
+        powers[victim]=0
+    QuestRules.settle(board,locks,seal_types,powers)
+    if mode=="arcade":
+        for i in range(64):
+            if board[i]==QuestRules.EMPTY:board[i]=randi_range(0,5)
+    moves_used+=1
+    if mode=="arcade":moves_left-=1
+    score+=victims.size()*95
+    popups.append({"text":"ARCANE BURST! +%s" % (victims.size()*95),
+        "life":1.1,"pos":ORIGIN+Vector2(4*CELL,2*CELL)})
+    _play_sound("combo")
+    _vibrate(60)
+    _resolve()
+    _celebrate_threshold(stars_before)
+    _finish_or_save()
+    _reset_idle()
+    queue_redraw()
 
 func _celebrate_threshold(previous_stars: int) -> void:
     if mode!="quest":return
@@ -1542,10 +1649,11 @@ func _hammer(idx: int) -> void:
     var old_color := board[idx]
     _emit_fx(idx, GEM_COLORS[old_color])
     board[idx] = QuestRules.EMPTY
+    if powers.size()==64:powers[idx]=0
     score += 75
     if locks.size()==64:locks[idx]=0
     if seal_types.size()==64:seal_types[idx]=0
-    QuestRules.settle(board,locks,seal_types)
+    QuestRules.settle(board,locks,seal_types,powers)
     boosters_used+=1
     if mode == "arcade":
         for row in range(ROWS):
@@ -1564,21 +1672,24 @@ func _shuffle() -> void:
         status_message = "No shuffles remaining."
         return
     var positions: Array[int] = []
-    var colors: Array[int] = []
     for idx in range(board.size()):
         if board[idx] >= 0 and (locks.is_empty() or locks[idx]==0):
             positions.append(idx)
-            colors.append(board[idx])
     if positions.size() < 3:
         status_message = "Not enough gems to shuffle."
         return
     var original: Array[int] = board.duplicate()
     var new_board: Array[int] = original.duplicate()
+    var new_powers: Array[int]=powers.duplicate()
+    var tile_pairs:Array[Vector2i]=[]
+    for position in positions:
+        tile_pairs.append(Vector2i(board[position],powers[position]))
     var found := false
     for attempt in range(120):
-        colors.shuffle()
+        tile_pairs.shuffle()
         for i in range(positions.size()):
-            new_board[positions[i]] = colors[i]
+            new_board[positions[i]]=tile_pairs[i].x
+            new_powers[positions[i]]=tile_pairs[i].y
         if QuestRules.scan(new_board).is_empty() and not QuestRules.legal_moves(new_board,locks).is_empty():
             found = true
             break
@@ -1587,6 +1698,7 @@ func _shuffle() -> void:
         return
     _push_undo()
     board = new_board
+    powers=new_powers
     shuffles_left -= 1
     boosters_used+=1
     selected = -1
@@ -1599,11 +1711,17 @@ func _shuffle() -> void:
 func _show_hint() -> void:
     hint_cells = _find_hint()
     hint_until = Time.get_ticks_msec() + 2400
-    status_message = "Swap the glowing gems!" if hint_cells.size() == 2 else "No matching moves remain."
+    status_message = "DOUBLE-TAP THE GLOWING GEM!" if hint_cells.size()==2 and hint_cells[0]==hint_cells[1] else ("Swap the glowing gems!" if hint_cells.size()==2 else "No matching moves remain.")
     _reset_idle()
 
 func _reset_idle() -> void:
     next_auto_hint_at = Time.get_ticks_msec() + 11000
+
+func _has_usable_special()->bool:
+    for i in range(powers.size()):
+        if powers[i]>0 and board[i]>=0 and (locks.is_empty() or locks[i]==0):
+            return true
+    return false
 
 func _finish_or_save() -> void:
     if mode == "quest":
@@ -1611,7 +1729,7 @@ func _finish_or_save() -> void:
         var stars:=QuestProgress.stars(start_gems,left)
         if left==0:
             _complete_quest()
-        elif QuestRules.legal_moves(board,locks).is_empty():
+        elif QuestRules.legal_moves(board,locks).is_empty() and not _has_usable_special():
             if stars>0:
                 _complete_quest()
             elif not recovery_used:
@@ -1763,7 +1881,7 @@ func _start_arcade(w: int) -> void:
 func _snapshot() -> Dictionary:
     return {
         "board": board.duplicate(),"locks":locks.duplicate(),"seal_types":seal_types.duplicate(),
-        "boosters_used":boosters_used,
+        "powers":powers.duplicate(),"boosters_used":boosters_used,
         "score": score, "moves": moves_left, "moves_used": moves_used,
         "collected": collected, "hints": hints_left,
         "shuffles": shuffles_left, "hammers": hammers_left
@@ -1795,6 +1913,10 @@ func _undo_last() -> void:
     for item in last.get("seal_types",[]):
         seal_types.append(int(item))
     if seal_types.size()!=64:seal_types.resize(64);seal_types.fill(0)
+    powers.clear()
+    for value in last.get("powers",[]):
+        powers.append(clampi(int(value),0,4))
+    if powers.size()!=64:powers.resize(64);powers.fill(0)
     boosters_used=int(last.get("boosters_used",0))
     score = int(last["score"])
     moves_left = int(last["moves"])
@@ -1914,6 +2036,11 @@ func _draw_live_gem(rect: Rect2, tile: int, index: int) -> void:
             if reflected>.58 and not save.pref("low_effects"):
                 _tex("spark_star",Rect2(rect.position+Vector2(15,12),Vector2(30,30)),
                     Color(1,.94,.71,reflected*.76))
+    if powers.size()==64 and powers[index]>0:
+        var icon:String=["","↔","↕","✦","✷"][powers[index]]
+        _rect(rect.grow(-3),Color.TRANSPARENT,12,Color("#ffe29e"),3)
+        _rect(Rect2(rect.end.x-31,rect.position.y+5,27,27),Color("#513372"),12,GOLD,2)
+        _label(icon,rect.end.x-17,rect.position.y+25,20,GOLD,true,ui_font)
     if save.pref("color_assist"):
         _label(str(tile + 1), rect.position.x + rect.size.x - 13, rect.position.y + 18, 14, Color("#ffedac"), true)
     if save.pref("gem_shimmer") and not save.pref("reduce_motion") and not save.pref("low_effects"):
@@ -2095,7 +2222,7 @@ func _draw_portrait_tablet_overlay()->void:
         _button(Rect2(200,693,500,85),"SETTINGS")
         _button(Rect2(200,823,500,85),"SAVE & HOME")
     elif state=="tutorial":
-        _label("MATCH THREE GEMS • NO REFILLS",450,608,22,CREAM,true)
+        _label("MATCH 4/5 TO CHARGE A SPECIAL RUNE",450,608,20,CREAM,true)
         _label("CLEAR 75% TO PASS, 85% FOR 2 ★, ALL FOR 3 ★",450,675,18,GOLD,true)
         _button(Rect2(200,822,500,84),"LET'S PLAY!",true,27)
     elif state=="recovery":
@@ -2259,7 +2386,8 @@ func _draw_tablet_progress() -> void:
         _label("LEVEL %s / 12" % save.unlocked_level(w),x+153,615,21,CREAM,true)
         _label("RESTORATION %s / 4" % save.world_stage(w),x+153,666,20,GOLD,true)
     _label("TOTAL STARS: %s     •     RELICS: %s / 16" % [save.total_stars(),save.relic_total()],800,808,30,GOLD,true)
-    _label("QUEST LEVELS COMPLETED: %s / 48" % save.completion_count(),800,852,19,CREAM,true)
+    _label("QUEST LEVELS COMPLETED: %s / 48" % save.completion_count(),800,798,19,CREAM,true)
+    _button(Rect2(614,832,400,64),"ACHIEVEMENTS",false,23)
 
 func _draw_tablet_settings() -> void:
     _fancy("SETTINGS",800,85,49)
@@ -2391,6 +2519,11 @@ func _gesture_tablet(start:Vector2,p:Vector2) -> void:
                         save.acknowledge_relic(album_world,i)
         "progress":
             if _inside(p,50,30,200,75):state="menu"
+            elif _inside(p,614,832,400,64):
+                state="achievements"
+                save.mark_achievements_seen()
+        "achievements":
+            if _inside(p,50,30,200,75):state="progress"
         "settings","settings_fx":
             if _inside(p,50,26,205,75):
                 state=settings_return
@@ -2424,7 +2557,11 @@ func _tablet_touch_board(start:Vector2,p:Vector2) -> void:
         selected=-1;_attempt_swap(first,second)
     elif selected>=0 and selected!=first and _adjacent(selected,first):
         _attempt_swap(selected,first);selected=-1
-    else:selected=-1 if selected==first else first
+    else:
+        if selected==first and powers.size()==64 and powers[first]>0:
+            _activate_special(first)
+        else:
+            selected=-1 if selected==first else first
 
 func _draw_effects_settings() -> void:
     _title("MAGICAL EFFECTS","Choose how much motion and lighting you want")
