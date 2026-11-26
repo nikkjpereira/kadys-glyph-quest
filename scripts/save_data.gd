@@ -25,12 +25,15 @@ func _init() -> void:
 
 func reset_defaults() -> void:
     data = {
-        "schema": 3,
+        "schema": 4,
         "mode": "quest",
         "arcade_best": 0,
         "tutorial_done_v04": false,
         "levels": {},
         "relics": {},
+        "relic_seen": {},
+        "pending_rewards": [],
+        "achievements": {},
         "restoration": [0,0,0,0],
         "tutorial_done_v06": false,
         "unlocked": [1, 1, 1, 1],
@@ -53,7 +56,7 @@ func load_all() -> void:
     if typeof(parsed) != TYPE_DICTIONARY:
         push_warning("Invalid save data; starting fresh")
         return
-    if int(parsed.get("schema", 0)) not in [2,3]:
+    if int(parsed.get("schema", 0)) not in [2,3,4]:
         return
     var incoming: Dictionary = parsed
     for key in data.keys():
@@ -61,7 +64,7 @@ func load_all() -> void:
             data[key] = incoming[key]
     # Completed stars, unlocks and settings migrate; obsolete in-progress
     # boards are re-created when the player starts v0.6.
-    data["schema"]=3
+    data["schema"]=4
     if typeof(data["prefs"]) != TYPE_DICTIONARY:
         data["prefs"] = DEFAULT_PREFS.duplicate(true)
     for key in DEFAULT_PREFS:
@@ -74,6 +77,9 @@ func load_all() -> void:
     if typeof(data["unlocked"]) != TYPE_ARRAY or data["unlocked"].size() != 4:
         data["unlocked"] = [1, 1, 1, 1]
     if typeof(data["relics"])!=TYPE_DICTIONARY:data["relics"]={}
+    if typeof(data["relic_seen"])!=TYPE_DICTIONARY:data["relic_seen"]={}
+    if typeof(data["achievements"])!=TYPE_DICTIONARY:data["achievements"]={}
+    if typeof(data["pending_rewards"])!=TYPE_ARRAY:data["pending_rewards"]=[]
     if typeof(data["restoration"])!=TYPE_ARRAY or data["restoration"].size()!=4:
         data["restoration"]=[0,0,0,0]
     for w in range(4):
@@ -137,11 +143,55 @@ func record_victory(world: int, level: int, score: int, stars: int) -> void:
     # Relics unlock at levels 3, 6, 9 and 12 (not just any three wins).
     if level in [3,6,9,12]:
         var slot:=int(level/3)-1
-        data["relics"]["%s-%s" % [world,slot]]=true
+        var relic_key: String="%s-%s" % [world,slot]
+        var first_unlock: bool=not bool(data["relics"].get(relic_key,false))
+        data["relics"][relic_key]=true
         data["restoration"][world]=maxi(int(data["restoration"][world]),slot+1)
+        if first_unlock:
+            data["pending_rewards"].append({"kind":"relic","world":world,"slot":slot,"key":relic_key})
+    unlock_achievement("first_victory",false)
+    if stars==3:unlock_achievement("perfect_clear",false)
+    if relic_total()>=1:unlock_achievement("first_relic",false)
+    if world_stage(world)==4:unlock_achievement("restored_world",false)
     data["total_stars"] = total_stars()
     data["current"] = {}
     save_all()
+
+func next_relic_reward() -> Dictionary:
+    for event in data.get("pending_rewards",[]):
+        if typeof(event)==TYPE_DICTIONARY and str(event.get("kind",""))=="relic":
+            return event.duplicate(true)
+    return {}
+
+func acknowledge_relic(world:int,slot:int) -> void:
+    var key: String="%s-%s" % [world,slot]
+    data["relic_seen"][key]=true
+    var remaining: Array=[]
+    for item in data.get("pending_rewards",[]):
+        if typeof(item)==TYPE_DICTIONARY and str(item.get("key",""))==key and str(item.get("kind",""))=="relic":
+            continue
+        remaining.append(item)
+    data["pending_rewards"]=remaining
+    save_all()
+
+func relic_is_new(world:int,slot:int) -> bool:
+    return has_relic(world,slot) and not bool(data.get("relic_seen",{}).get("%s-%s" % [world,slot],false))
+
+func unseen_relic_count()->int:
+    var count:=0
+    for world in range(4):
+        for slot in range(4):
+            if relic_is_new(world,slot):count+=1
+    return count
+
+func unlock_achievement(id:String,persist:bool=true)->bool:
+    if bool(data["achievements"].get(id,false)):return false
+    data["achievements"][id]=true
+    if persist:save_all()
+    return true
+
+func completion_count() -> int:
+    return data.get("levels",{}).size()
 
 func world_stage(world:int)->int:
     return clampi(int(data.get("restoration",[0,0,0,0])[world]),0,4)

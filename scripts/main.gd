@@ -110,10 +110,16 @@ var popups: Array[Dictionary] = []
 var clock := 0.0
 var next_auto_hint_at := 0
 var settings_scroll := 0
+var pending_transition := "home"
+var reveal_started := 0.0
+var victory_at := -100.0
+var relic_catalog: Array = []
 
 func _ready() -> void:
     randomize()
     save.load_all()
+    var level_metadata: Dictionary=JSON.parse_string(FileAccess.get_file_as_string("res://data/levels_v06.json"))
+    relic_catalog=level_metadata.get("relics",[])
     mode = str(save.data.get("mode", "quest"))
     if mode not in ["quest", "arcade"]:
         mode = "quest"
@@ -191,6 +197,13 @@ func _ready() -> void:
     var active: Dictionary = save.data.get("current", {})
     if active.has("world"):
         world_index = clampi(int(active.get("world", 0)), 0, 3)
+    # Unacknowledged first-time unlocks survive termination/relaunch.
+    var outstanding: Dictionary=save.next_relic_reward()
+    if not outstanding.is_empty():
+        world_index=clampi(int(outstanding.get("world",0)),0,3)
+        state="relic_reveal"
+        pending_transition="home"
+        reveal_started=clock
     queue_redraw()
 
 func _configure_font_for_tablet(font: Font) -> void:
@@ -212,6 +225,8 @@ func _process(delta: float) -> void:
     clock += delta
     if victory_spark_age>0.0:
         victory_spark_age=maxf(0.0,victory_spark_age-delta)
+    if state=="victory" and not save.next_relic_reward().is_empty() and clock-victory_at>=1.6:
+        _offer_relic_reward("next")
     if threshold_flash_age>0.0:
         threshold_flash_age=maxf(0.0,threshold_flash_age-delta)
         queue_redraw()
@@ -304,10 +319,10 @@ func _draw() -> void:
         CELL=82.0
         ORIGIN=Vector2(32,429)
     var bg: Texture2D = scene_bg
-    if state in ["playing","paused","victory","failure","recovery","tutorial"] and backgrounds.size()==4:
+    if state in ["playing","paused","victory","failure","recovery","tutorial","relic_reveal"] and backgrounds.size()==4:
         bg=backgrounds[world_index]
     if bg!=null:
-        draw_texture_rect(bg,Rect2(Vector2.ZERO,get_viewport_rect().size),false)
+        _draw_cover_background(bg,get_viewport_rect().size)
     var extra_x:=90.0 if draw_layout_tablet_portrait and state not in ["playing","paused","victory","failure","recovery","tutorial"] else 0.0
     var shake:=Vector2.ZERO
     if save.pref("screen_shake") and not save.pref("reduce_motion") and impact_flash>0.0:
@@ -322,6 +337,7 @@ func _draw() -> void:
             "menu":_draw_tablet_menu()
             "levels":_draw_tablet_levels()
             "collection":_draw_tablet_collection()
+            "relic_reveal":_draw_relic_reveal(true)
             "settings","settings_fx":_draw_tablet_settings()
             "progress":_draw_tablet_progress()
             "reset_confirm":_draw_tablet_settings()
@@ -338,6 +354,7 @@ func _draw() -> void:
             "settings_fx":_draw_effects_settings()
             "progress":_draw_progress()
             "collection":_draw_collection()
+            "relic_reveal":_draw_relic_reveal(false)
             "playing","paused","victory","failure","recovery","tutorial":
                 _draw_game()
                 if state=="paused":_draw_pause()
@@ -350,6 +367,25 @@ func _draw() -> void:
                 _draw_reset_confirm()
     draw_set_transform(Vector2.ZERO)
 
+func _draw_cover_background(texture:Texture2D,destination:Vector2) -> void:
+    # Draw the backdrop exactly once, before logical-size UI transforms.
+    # Center-crop instead of stretching or repeating it in overlapping bands.
+    var size: Vector2=texture.get_size()
+    var scale_factor:float=maxf(destination.x/size.x,destination.y/size.y)
+    var sampled:Vector2=destination/scale_factor
+    var source:=Rect2((size-sampled)*.5,sampled)
+    draw_texture_rect_region(texture,Rect2(Vector2.ZERO,destination),source)
+
+func _gear_icon(rect:Rect2) -> void:
+    _rect(rect,Color("#2d1b46"),13,GOLD,3)
+    var center:Vector2=rect.get_center()
+    draw_arc(center,rect.size.x*.18,0,TAU,32,GOLD,3,true)
+    for i in range(8):
+        var angle:float=float(i)*TAU/8.0
+        var direction:=Vector2(cos(angle),sin(angle))
+        draw_line(center+direction*rect.size.x*.22,
+            center+direction*rect.size.x*.34,GOLD,4,true)
+
 func _tex(key: String, rect: Rect2, tint: Color = Color.WHITE) -> void:
     var tex: Texture2D = art.get(key, null) as Texture2D
     if tex != null:
@@ -357,11 +393,11 @@ func _tex(key: String, rect: Rect2, tint: Color = Color.WHITE) -> void:
 
 func _background() -> void:
     var tex: Texture2D = scene_bg
-    if state in ["playing", "paused", "victory", "failure", "tutorial"]:
+    if state in ["playing", "paused", "victory", "failure", "recovery", "tutorial", "relic_reveal"]:
         tex = backgrounds[world_index]
-    if tex != null:
-        draw_texture_rect(tex, Rect2(Vector2.ZERO,_logical_size()), false)
-    else:
+    # The full-screen cover background has already been drawn once in _draw.
+    # A second scaled copy caused the visible horizontal seams on tablets.
+    if tex == null:
         draw_rect(Rect2(Vector2.ZERO,_logical_size()), NAVY)
     var restoration:=save.world_stage(world_index)
     var darkening:=maxf(.05,.32-float(restoration)*.065) if state in ["playing","paused","victory","failure","recovery","tutorial"] else .11
@@ -497,61 +533,82 @@ func _draw_logo(x: float, y: float, w: float, h: float) -> void:
     draw_texture_rect(logo,Rect2(anchor,size),false)
 
 func _draw_menu() -> void:
-    _draw_logo(28, 76, 664, 186)
-    _label("MATCH. DISCOVER. AWAKEN.",360,294,23,GOLD,true,display_font)
-    _panel(Rect2(52, 329, 616, 318), Color("#2e1d4b"), true, 0.92)
-    _tex("world_%d" % world_index, Rect2(380, 374, 267, 207), Color(1, 1, 1, 0.93))
-    _rect(Rect2(370, 372, 16, 200), Color(0.06, 0.03, 0.13, 0.55), 4)
-    _label("CURRENT ADVENTURE", 243, 379, 22, GOLD, true)
-    _label(_world_symbol(world_index), 221, 478, 82, CREAM, true, _world_font(world_index))
-    _fancy(WORLD_SHORT[world_index], 239, 524, 27)
-    if mode == "quest":
-        _label("LEVEL %s / %s" % [save.unlocked_level(world_index), LEVEL_COUNT], 238, 566, 21, CREAM, true)
-    else:
-        _label("UNLIMITED MATCHES", 238, 566, 19, CREAM, true)
-    _button(Rect2(57, 431, 70, 63), "<", false, 29)
-    _button(Rect2(593, 431, 70, 63), ">", false, 29)
-    _button(Rect2(85, 583, 252, 61), "QUEST", mode == "quest", 22)
-    _button(Rect2(374, 583, 252, 61), "ARCADE", mode == "arcade", 22)
-    var current: Dictionary = save.data.get("current", {})
-    var same_mode: bool = str(current.get("mode", "")) == mode
-    var same_world: bool = int(current.get("world", -1)) == world_index
-    var button_label := "CONTINUE GAME" if same_mode and same_world else ("BEGIN QUEST" if mode == "quest" else "PLAY ARCADE")
-    _button(Rect2(54, 673, 612, 84), button_label, true, 32)
-    _fancy("CHOOSE YOUR WORLD", 360, 801, 27)
+    _draw_logo(64,93,592,178)
+    _gear_icon(Rect2(629,81,69,69))
+    _label("MATCH. DISCOVER. AWAKEN.",360,299,22,GOLD,true,display_font)
+    _panel(Rect2(52,333,616,313),Color("#2e1d4b"),true,.92)
+    _tex("world_%d" % world_index,Rect2(387,371,257,207),Color(1,1,1,.94))
+    _label("CURRENT ADVENTURE",231,386,22,GOLD,true)
+    _label(_world_symbol(world_index),229,479,81,CREAM,true,_world_font(world_index))
+    _fancy(WORLD_SHORT[world_index],227,530,28)
+    _label("LEVEL %s / %s" % [save.unlocked_level(world_index),LEVEL_COUNT]
+        if mode=="quest" else "UNLIMITED MATCHES",226,566,19,CREAM,true)
+    _button(Rect2(483,525,154,54),"LEVEL MAP",false,18)
+    _button(Rect2(87,583,248,59),"QUEST",mode=="quest",21)
+    _button(Rect2(377,583,245,59),"ARCADE",mode=="arcade",21)
+    var current:Dictionary=save.data.get("current",{})
+    var can_resume:bool=str(current.get("mode",""))==mode and int(current.get("world",-1))==world_index
+    _button(Rect2(55,675,610,82),"CONTINUE" if can_resume else ("BEGIN QUEST" if mode=="quest" else "PLAY ARCADE"),true,29)
+    _fancy("CHOOSE YOUR WORLD",360,806,27)
     for i in range(4):
-        var xx := 51 + (i % 2) * 314
-        var yy := 829 + int(i / 2) * 112
-        _panel(Rect2(xx, yy, 300, 95), Color("#3d255a") if world_index == i else Color("#2b1b44"), false, 0.94)
-        _tex("world_%d" % i, Rect2(xx + 16, yy + 12, 85, 71))
-        _label(WORLD_SHORT[i], xx + 199, yy + 41, 21, GOLD if world_index == i else CREAM, true)
-        _label("LEVEL %s / %s" % [save.unlocked_level(i), LEVEL_COUNT], xx + 199, yy + 70, 17, MUTED, true)
-    _button(Rect2(53, 1081, 613, 68), "CHOOSE A LEVEL", false, 25)
-    _button(Rect2(52, 1173, 299, 73), "SETTINGS", false, 25)
-    _button(Rect2(369, 1173, 299, 73), "PROGRESS", false, 25)
-    _button(Rect2(172, 1267, 376, 70), "RELIC COLLECTION", false, 22)
-    _label("RUNEFALL  •  MATCH. DISCOVER. AWAKEN.  •  v0.6.1", 360, 1368, 16, CREAM, true)
+        var xx:=51+(i%2)*314
+        var yy:=835+int(i/2)*112
+        _panel(Rect2(xx,yy,300,95),Color("#3d255a") if world_index==i else Color("#2b1b44"),false,.94)
+        _tex("world_%d" % i,Rect2(xx+15,yy+10,87,75))
+        _label(WORLD_SHORT[i],xx+199,yy+41,20,GOLD if world_index==i else CREAM,true)
+        _label("LEVEL %s / 12" % save.unlocked_level(i),xx+199,yy+69,16,MUTED,true)
+    _button(Rect2(50,1097,298,69),"PROGRESS",false,22)
+    _button(Rect2(372,1097,298,69),"RELICS",false,22)
+    if save.unseen_relic_count()>0:
+        _rect(Rect2(628,1098,40,28),Color("#ad3765"),12,GOLD,2)
+        _label(str(save.unseen_relic_count()),647,1118,16,CREAM,true)
+    _label("RUNEFALL  •  "+Brand.VERSION+"  •  MATCH. DISCOVER. AWAKEN.",360,1329,16,CREAM,true)
+
+func _map_rect(index:int,wide:bool=false)->Rect2:
+    if wide:
+        var col:int=index%6
+        var row:int=int(index/6)
+        var routed_col:int=col if row%2==0 else 5-col
+        return Rect2(275+routed_col*206,190+row*280,180,214)
+    var col:int=index%4
+    var row:int=int(index/4)
+    var routed_col:int=col if row%2==0 else 3-col
+    return Rect2(53+routed_col*159,387+row*220,145,166)
+
+func _draw_map_links(wide:bool=false)->void:
+    for index in range(LEVEL_COUNT-1):
+        var first:Rect2=_map_rect(index,wide)
+        var second:Rect2=_map_rect(index+1,wide)
+        var start:Vector2=first.get_center()
+        var end:Vector2=second.get_center()
+        var completed:bool=int(save.best_result(world_index,index+1).get("stars",0))>0
+        draw_line(start,end,Color(.72,.47,.92,.45),14 if wide else 9,true)
+        draw_line(start,end,GOLD if completed else Color("#75688b"),
+            5 if wide else 3,true)
 
 func _draw_levels() -> void:
-    _title("CHOOSE A LEVEL",WORLD_NAMES[world_index])
+    _title("WORLD MAP",WORLD_NAMES[world_index])
     _button(Rect2(48,225,144,63),"BACK")
-    _label("Each victory earns stars and unlocks new challenges.",360,328,20,CREAM,true)
+    _label("Unlock levels • Earn stars • Discover relics",360,334,20,CREAM,true)
+    _draw_map_links()
     for idx in range(LEVEL_COUNT):
-        var lvl := idx+1
-        var xx := 47 + (idx % 4) * 159
-        var yy := 390 + int(idx / 4) * 174
-        var unlocked := lvl <= save.unlocked_level(world_index)
-        _panel(Rect2(xx,yy,146,149),Color("#4f296c") if unlocked else Color("#262039"),true,0.96)
-        if unlocked:
-            _fancy(str(lvl),xx+73,yy+82,45)
-        else:
-            _label("LOCKED",xx+73,yy+79,18,MUTED,true)
-        var entry: Dictionary = save.best_result(world_index,lvl)
-        if unlocked:
-            _label("★".repeat(int(entry.get("stars",0))) if int(entry.get("stars",0))>0 else "NEW",xx+73,yy+121,18,GOLD,true)
-    _fancy("WORLD PROGRESS",360,1060,28)
-    _label("Complete quests to illuminate the map.",360,1110,21,CREAM,true)
-    _button(Rect2(100,1192,520,77),"PLAY HIGHEST LEVEL",true,26)
+        var lvl:int=idx+1
+        var rect:Rect2=_map_rect(idx)
+        var unlocked:bool=lvl<=save.unlocked_level(world_index)
+        var stars:int=int(save.best_result(world_index,lvl).get("stars",0))
+        _panel(rect,Color("#4f296c") if unlocked else Color("#252039"),true,.97)
+        _fancy(str(lvl) if unlocked else "◆",rect.get_center().x,rect.position.y+75,43)
+        _label("★".repeat(stars) if stars>0 else ("PLAY" if unlocked else "LOCKED"),
+            rect.get_center().x,rect.position.y+124,18,GOLD if unlocked else MUTED,true)
+        if lvl%3==0:
+            var slot:int=int(lvl/3)-1
+            _tex("relic_%d_%d" % [world_index,slot],
+                Rect2(rect.position.x+rect.size.x-47,rect.position.y+3,43,43),
+                Color.WHITE if save.has_relic(world_index,slot) else Color(.5,.4,.55,.7))
+    _fancy("WORLD RESTORATION %s / 4" % save.world_stage(world_index),360,1145,24)
+    _label("Milestone artifacts unlock at levels 3, 6, 9 and 12.",360,1190,17,CREAM,true)
+    _button(Rect2(100,1252,520,75),"PLAY CURRENT LEVEL",true,25)
+
 
 func _draw_progress() -> void:
     _title("YOUR ADVENTURE","Every star is saved on this device")
@@ -566,8 +623,14 @@ func _draw_progress() -> void:
         _label("LEVEL %s / %s" % [save.unlocked_level(i),LEVEL_COUNT],178,yy+34,19,MUTED)
         _rect(Rect2(178,yy+46,447,14),Color("#483d60"),7)
         _rect(Rect2(178,yy+46,maxf(11,447.0*float(save.unlocked_level(i)-1)/float(LEVEL_COUNT)),14),Color("#f0c067"),7)
-    _label("ARCADE BEST: %s" % int(save.data.get("arcade_best", 0)),360,1158,22,GOLD,true)
-    _label("NO LOGIN. YOUR ADVENTURE SAVES OFFLINE.",360,1204,17,CREAM,true)
+    _label("ARCADE BEST: %s" % int(save.data.get("arcade_best", 0)),360,1135,21,GOLD,true)
+    _label("COMPLETED LEVELS: %s / 48" % save.completion_count(),360,1175,20,CREAM,true)
+    var achievements:Array=["first_match","first_victory","perfect_clear","combo_master","first_relic","restored_world"]
+    var count:int=0
+    for id in achievements:
+        if bool(save.data["achievements"].get(id,false)):count+=1
+    _label("ACHIEVEMENTS: %s / %s" % [count,achievements.size()],360,1223,21,GOLD,true)
+    _label("NO LOGIN • YOUR PROGRESS SAVES OFFLINE",360,1293,16,CREAM,true)
 
 func _draw_settings() -> void:
     _title("SETTINGS","The way you like to play")
@@ -834,6 +897,8 @@ func _draw_result(victory: bool) -> void:
         _label("CLEAR RATE: %.0f%%" % percent, 360, 637, 27, CREAM, true)
         _label("%s of %s gems cleared" % [start_gems - remaining, start_gems], 360, 694, 23, CREAM, true)
         _label("MOVES: %s   •   SCORE: %s" % [moves_used, score], 360, 743, 22, GOLD, true)
+        if victory and not save.next_relic_reward().is_empty():
+            _label("RELIC FOUND! REVEALING YOUR REWARD...",360,774,18,Color("#ffbadb"),true)
     else:
         _fancy("ARCADE WIN!" if victory else "OUT OF MOVES", 360, 498, 38)
         _draw_result_stars(360,580,earned_stars if victory else 0,55)
@@ -935,7 +1000,13 @@ func _gesture(start: Vector2, finish: Vector2) -> void:
                 for w in range(4):
                     if _inside(p,55+w*155,320,148,78):
                         album_world=w
+                for i in range(4):
+                    var xx:int=88+(i%2)*284
+                    var yy:int=635+int(i/2)*242
+                    if _inside(p,xx,yy,190,210) and save.has_relic(album_world,i):
+                        save.acknowledge_relic(album_world,i)
         "playing": _touch_game(start,p)
+        "relic_reveal":_touch_relic_reveal(p)
         "recovery":_touch_recovery(p)
         "paused": _touch_pause(p)
         "victory","failure": _touch_result(p)
@@ -964,6 +1035,8 @@ func _back() -> void:
             _save_current()
         "recovery":
             _skip_recovery()
+        "relic_reveal":
+            _finish_relic_reward(false)
         "paused":
             state="playing"
         "levels","progress","collection":
@@ -982,57 +1055,57 @@ func _back() -> void:
     queue_redraw()
 
 func _touch_menu(p: Vector2) -> void:
-    if _inside(p, 52, 431, 80, 63):
-        world_index = (world_index + 3) % 4
-    elif _inside(p, 588, 431, 80, 63):
-        world_index = (world_index + 1) % 4
-    elif _inside(p, 85, 583, 252, 61):
-        mode = "quest"
-        save.data["mode"] = mode
+    if _inside(p,629,81,69,69):
+        settings_return="menu"
+        state="settings"
+        return
+    if _inside(p,483,525,154,54):
+        mode="quest"
+        save.data["mode"]=mode
         save.save_all()
-    elif _inside(p, 374, 583, 252, 61):
-        mode = "arcade"
-        save.data["mode"] = mode
+        state="levels"
+        return
+    if _inside(p,87,583,248,59):
+        mode="quest"
+        save.data["mode"]=mode
         save.save_all()
-    elif _inside(p, 54, 673, 612, 84):
-        var current: Dictionary = save.data.get("current", {})
-        if current.get("mode", "") == mode and int(current.get("world", -1)) == world_index and _resume_saved():
+        return
+    if _inside(p,377,583,245,59):
+        mode="arcade"
+        save.data["mode"]=mode
+        save.save_all()
+        return
+    if _inside(p,55,675,610,82):
+        var current:Dictionary=save.data.get("current",{})
+        if current.get("mode","")==mode and int(current.get("world",-1))==world_index and _resume_saved():
             return
-        _start_level(world_index, save.unlocked_level(world_index) if mode == "quest" else 1)
-    else:
-        for i in range(4):
-            var xx := 51 + (i % 2) * 314
-            var yy := 829 + int(i / 2) * 112
-            if _inside(p, xx, yy, 300, 95):
-                world_index = i
-                return
-        if _inside(p, 53, 1081, 613, 68):
-            mode = "quest"
-            save.data["mode"] = mode
-            save.save_all()
-            state = "levels"
-        elif _inside(p, 52, 1173, 299, 73):
-            settings_return = "menu"
-            state = "settings"
-        elif _inside(p, 369, 1173, 299, 73):
-            state = "progress"
-        elif _inside(p,172,1267,376,70):
-            album_world=world_index
-            state="collection"
+        _start_level(world_index,save.unlocked_level(world_index) if mode=="quest" else 1)
+        return
+    for i in range(4):
+        var xx:=51+(i%2)*314
+        var yy:=835+int(i/2)*112
+        if _inside(p,xx,yy,300,95):
+            world_index=i
+            return
+    if _inside(p,50,1097,298,69):
+        state="progress"
+    elif _inside(p,372,1097,298,69):
+        album_world=world_index
+        state="collection"
 
 func _touch_levels(p: Vector2) -> void:
     if _inside(p,48,225,144,63):
         state="menu"
         return
     for idx in range(LEVEL_COUNT):
-        var xx := 47+(idx%4)*159
-        var yy := 390+int(idx/4)*174
-        if _inside(p,xx,yy,146,149):
-            if idx+1 <= save.unlocked_level(world_index):
+        var r:Rect2=_map_rect(idx)
+        if r.has_point(p):
+            if idx+1<=save.unlocked_level(world_index):
                 _start_level(world_index,idx+1)
             return
-    if _inside(p,100,1192,520,77):
+    if _inside(p,100,1252,520,75):
         _start_level(world_index,save.unlocked_level(world_index))
+
 
 func _touch_settings(p: Vector2) -> void:
     if _inside(p,49,217,153,65):
@@ -1069,6 +1142,10 @@ func _touch_pause(p: Vector2) -> void:
 
 func _touch_result(p: Vector2) -> void:
     var was_win := state == "victory"
+    if was_win and not save.next_relic_reward().is_empty():
+        if _inside(p,112,792,496,76):_offer_relic_reward("next");return
+        if _inside(p,112,889,496,76):_offer_relic_reward("replay");return
+        if _inside(p,112,984,496,60):_offer_relic_reward("home");return
     if _inside(p, 112, 792, 496, 76):
         if mode == "arcade":
             _start_arcade(world_index)
@@ -1358,6 +1435,7 @@ func _attempt_swap(a: int, b: int) -> void:
     var stars_before:=_eligible_stars()
     _swap_values(a, b)
     moves_used += 1
+    save.unlock_achievement("first_match",true)
     if mode == "arcade":
         moves_left -= 1
     hint_cells.clear()
@@ -1414,6 +1492,7 @@ func _resolve() -> void:
         popups.append({"text": "+%s" % points, "life": 1.0, "pos": Vector2(360, 735)})
         if combo > 1:
             popups.append({"text":"COMBO x%s!" % combo,"life":1.0,"pos":Vector2(360,790)})
+            if combo>=2:save.unlock_achievement("combo_master",true)
             _play_sound("combo")
         else:
             _play_sound("match")
@@ -1575,9 +1654,9 @@ func _complete_quest() -> void:
     state="victory"
     status_message="PERFECT CLEAR!" if earned_stars==3 else "LEVEL COMPLETE!"
     save.record_victory(world_index,level,score,earned_stars)
+    victory_at=clock
     victory_spark_age=1.2
     _play_sound("win")
-    if level%3==0:_play_sound("relic")
     _vibrate(70)
     queue_redraw()
 
@@ -1859,6 +1938,90 @@ func _draw_seal(rect: Rect2,idx: int) -> void:
     else:
         _tex("lock",rect)
 
+func _offer_relic_reward(transition:String="next") -> bool:
+    var reward:Dictionary=save.next_relic_reward()
+    if reward.is_empty():return false
+    pending_transition=transition
+    world_index=clampi(int(reward.get("world",0)),0,3)
+    state="relic_reveal"
+    reveal_started=clock
+    _play_sound("relic")
+    _vibrate(110)
+    queue_redraw()
+    return true
+
+func _finish_relic_reward(open_collection:bool=false) -> void:
+    var reward:Dictionary=save.next_relic_reward()
+    if not reward.is_empty():
+        save.acknowledge_relic(int(reward.get("world",0)),int(reward.get("slot",0)))
+    if open_collection:
+        album_world=world_index
+        state="collection"
+    else:
+        match pending_transition:
+            "next":
+                if mode=="quest" and level<LEVEL_COUNT:
+                    _start_level(world_index,level+1)
+                else:state="menu"
+            "replay":_start_level(world_index,level)
+            _:state="menu"
+    pending_transition="home"
+    _music_state()
+    queue_redraw()
+
+func _draw_relic_reveal(wide:bool=false) -> void:
+    var reward:Dictionary=save.next_relic_reward()
+    if reward.is_empty():return
+    var rw:int=clampi(int(reward.get("world",0)),0,3)
+    var slot:int=clampi(int(reward.get("slot",0)),0,3)
+    var name:String="ANCIENT RELIC"
+    if rw<relic_catalog.size() and slot<relic_catalog[rw].size():
+        name=str(relic_catalog[rw][slot])
+    var center_x:float=800.0 if wide else 360.0
+    var elapsed:float=maxf(0.0,clock-reveal_started)
+    var quiet:bool=save.pref("reduce_motion")
+    var pulse:float=0.0 if quiet else .5+.5*sin(elapsed*3.4)
+    if wide:
+        _rect(Rect2(0,0,1600,900),Color(.02,.012,.065,.81),0)
+        _panel(Rect2(370,48,860,802),Color("#35214f"),true)
+        _fancy("RELIC FOUND!",center_x,153,57)
+        var icon_center:=Vector2(center_x,365)
+        _tex("relic_%s_%s" % [rw,slot],Rect2(667,219,266,270))
+        if not quiet:
+            draw_arc(icon_center,171+pulse*13,0,TAU,90,Color(1,.84,.43,.56+pulse*.22),5.0,true)
+        _fancy(name.to_upper(),center_x,543,35)
+        _label("%s  •  WORLD RESTORED %s / 4" % [WORLD_NAMES[rw],save.world_stage(rw)],center_x,615,24,CREAM,true)
+        _button(Rect2(433,700,340,80),"CONTINUE",true,29)
+        _button(Rect2(822,700,350,80),"VIEW RELICS",false,27)
+    else:
+        _rect(Rect2(0,0,720,1440),Color(.02,.012,.065,.8),0)
+        _panel(Rect2(55,260,610,881),Color("#35214f"),true)
+        _fancy("RELIC FOUND!",center_x,383,45)
+        var icon_center:=Vector2(center_x,688)
+        if not quiet:
+            draw_arc(icon_center,195+pulse*17,0,TAU,90,Color(1,.84,.43,.51+pulse*.28),5.0,true)
+            for i in range(12):
+                var theta:float=float(i)*TAU/12.0+elapsed*.38
+                var pt:Vector2=icon_center+Vector2(cos(theta),sin(theta))*(216.0+pulse*16)
+                _tex("spark_star",Rect2(pt-Vector2(13,13),Vector2(26,26)),
+                    Color(1,.9,.59,.35+pulse*.55))
+        var zoom:float=0.97 if quiet else .96+.04*minf(1.0,elapsed)*(.7+.3*pulse)
+        var size:float=319.0*zoom
+        _tex("relic_%s_%s" % [rw,slot],
+            Rect2(icon_center-Vector2(size,size)*.5,Vector2(size,size)))
+        _fancy(name.to_upper(),center_x,950,32)
+        _label("%s  •  RESTORATION %s / 4" % [WORLD_SHORT[rw],save.world_stage(rw)],center_x,999,21,CREAM,true)
+        _button(Rect2(92,1034,258,75),"CONTINUE",true,23)
+        _button(Rect2(370,1034,258,75),"VIEW RELICS",false,22)
+
+func _touch_relic_reveal(p:Vector2,wide:bool=false)->void:
+    if wide:
+        if _inside(p,433,700,340,80):_finish_relic_reward(false)
+        elif _inside(p,822,700,350,80):_finish_relic_reward(true)
+    else:
+        if _inside(p,92,1034,258,75):_finish_relic_reward(false)
+        elif _inside(p,370,1034,258,75):_finish_relic_reward(true)
+
 func _draw_collection() -> void:
     _title("RELIC COLLECTION","Restore each world by completing its quests")
     _button(Rect2(48,225,154,64),"BACK")
@@ -1880,6 +2043,9 @@ func _draw_collection() -> void:
         var entries: Array=JSON.parse_string(FileAccess.get_file_as_string("res://data/levels_v06.json")).get("relics",[])
         var title: String=str(entries[album_world][i]) if entries.size()>album_world else "ANCIENT RELIC"
         _label(title if owned else "MISSING RELIC",xx+93,yy+193,17,GOLD if owned else MUTED,true)
+        if save.relic_is_new(album_world,i):
+            _rect(Rect2(xx+139,yy+8,55,29),Color("#a0335d"),11,GOLD,2)
+            _label("NEW",xx+165,yy+28,17,CREAM,true)
         _label("COMPLETE LEVEL %s" % ((i+1)*3),xx+93,yy+217,16,CREAM,true)
     _label("RELICS: %s / 16  •  COMPLETION RESTORES THE WORLD" % save.relic_total(),360,1314,18,GOLD,true)
 
@@ -2027,6 +2193,7 @@ func _draw_tablet_game() -> void:
 
 func _draw_tablet_menu() -> void:
     _draw_logo(490,12,620,200)
+    _gear_icon(Rect2(1475,24,82,82))
     _label("MATCH. DISCOVER. AWAKEN.",800,223,23,GOLD,true,display_font)
     _fancy("CHOOSE YOUR WORLD",800,274,32)
     for i in range(4):
@@ -2034,25 +2201,38 @@ func _draw_tablet_menu() -> void:
         _panel(Rect2(xx,305,356,323),Color("#392551") if i==world_index else Color("#261b45"),true)
         _tex("world_%d" % i,Rect2(xx+42,337,269,191))
         _fancy(WORLD_SHORT[i],xx+178,567,26)
-        _label("LEVEL %s/12 • RESTORED %s/4" % [save.unlocked_level(i),save.world_stage(i)],xx+178,603,17,CREAM,true)
-    _button(Rect2(390,664,400,67),"QUEST MODE",mode=="quest",26)
-    _button(Rect2(818,664,400,67),"ARCADE MODE",mode=="arcade",26)
-    _button(Rect2(384,748,834,78),"CONTINUE ADVENTURE",true,33)
-    _button(Rect2(57,820,350,63),"LEVELS",false,22)
-    _button(Rect2(431,820,350,63),"SETTINGS",false,22)
-    _button(Rect2(805,820,350,63),"PROGRESS",false,22)
-    _button(Rect2(1178,820,350,63),"RELICS",false,22)
+        _label("LEVEL %s / 12  •  RELICS %s / 4" % [save.unlocked_level(i),save.world_stage(i)],xx+178,603,17,CREAM,true)
+    _button(Rect2(390,664,400,67),"QUEST",mode=="quest",26)
+    _button(Rect2(818,664,400,67),"ARCADE",mode=="arcade",26)
+    _button(Rect2(384,747,834,79),"CONTINUE ADVENTURE",true,32)
+    _button(Rect2(122,835,360,57),"LEVEL MAP",false,21)
+    _button(Rect2(616,835,360,57),"PROGRESS",false,21)
+    _button(Rect2(1110,835,360,57),"RELICS",false,21)
+    if save.unseen_relic_count()>0:
+        _label("NEW %s" % save.unseen_relic_count(),1410,829,18,Color("#ffa0b2"),true)
 
 func _draw_tablet_levels() -> void:
-    _title("CHOOSE A LEVEL",WORLD_SHORT[world_index])
+    _fancy("THE WORLD MAP",800,84,44)
+    _label(WORLD_NAMES[world_index]+"  •  RELICS "+str(save.world_stage(world_index))+"/4",
+        800,130,22,CREAM,true)
     _button(Rect2(40,28,200,72),"BACK",false,24)
-    for lvl in range(1,13):
-        var xx:=275+((lvl-1)%6)*206
-        var yy:=190+int((lvl-1)/6)*280
-        var unlocked:=lvl<=save.unlocked_level(world_index)
-        _panel(Rect2(xx,yy,180,215),Color("#402a62") if unlocked else Color("#272039"),true)
-        _fancy(str(lvl),xx+90,yy+116,56)
-        _label("★".repeat(int(save.best_result(world_index,lvl).get("stars",0))) if unlocked else "LOCKED",xx+90,yy+174,19,GOLD,true)
+    _draw_map_links(true)
+    for idx in range(LEVEL_COUNT):
+        var lvl:int=idx+1
+        var rect:Rect2=_map_rect(idx,true)
+        var unlocked:bool=lvl<=save.unlocked_level(world_index)
+        var stars:int=int(save.best_result(world_index,lvl).get("stars",0))
+        _panel(rect,Color("#402a62") if unlocked else Color("#272039"),true)
+        _fancy(str(lvl) if unlocked else "◆",rect.get_center().x,rect.position.y+112,51)
+        _label("★".repeat(stars) if stars>0 else ("PLAY" if unlocked else "LOCKED"),
+            rect.get_center().x,rect.position.y+167,20,GOLD if unlocked else MUTED,true)
+        if lvl%3==0:
+            var slot:int=int(lvl/3)-1
+            _tex("relic_%d_%d" % [world_index,slot],
+                Rect2(rect.end.x-51,rect.position.y+5,44,44),
+                Color.WHITE if save.has_relic(world_index,slot) else Color(.5,.4,.55,.7))
+    _label("Milestone relics: 3  •  6  •  9  •  12",800,816,25,GOLD,true)
+
 
 func _draw_tablet_collection() -> void:
     _fancy("THE RELIC COLLECTION",800,82,48)
@@ -2065,6 +2245,8 @@ func _draw_tablet_collection() -> void:
         var owned:=save.has_relic(album_world,i)
         _tex("relic_%d_%d" % [album_world,i],Rect2(xx,324,305,315),Color.WHITE if owned else Color(.3,.3,.4,.75))
         _label("RESTORED" if owned else "LOCKED",xx+153,685,25,GOLD if owned else MUTED,true)
+        if save.relic_is_new(album_world,i):
+            _label("NEW",xx+153,705,19,Color("#ff8db7"),true)
         _label("LEVEL %s" % ((i+1)*3),xx+153,736,22,CREAM,true)
 
 func _draw_tablet_progress() -> void:
@@ -2077,6 +2259,7 @@ func _draw_tablet_progress() -> void:
         _label("LEVEL %s / 12" % save.unlocked_level(w),x+153,615,21,CREAM,true)
         _label("RESTORATION %s / 4" % save.world_stage(w),x+153,666,20,GOLD,true)
     _label("TOTAL STARS: %s     •     RELICS: %s / 16" % [save.total_stars(),save.relic_total()],800,808,30,GOLD,true)
+    _label("QUEST LEVELS COMPLETED: %s / 48" % save.completion_count(),800,852,19,CREAM,true)
 
 func _draw_tablet_settings() -> void:
     _fancy("SETTINGS",800,85,49)
@@ -2124,6 +2307,8 @@ func _draw_tablet_overlay() -> void:
 func _gesture_tablet(start:Vector2,p:Vector2) -> void:
     match state:
         "menu":
+            if _inside(p,1475,24,82,82):
+                settings_return="menu";state="settings";return
             for i in range(4):
                 if _inside(p,50+i*384,305,356,323):
                     world_index=i
@@ -2132,18 +2317,16 @@ func _gesture_tablet(start:Vector2,p:Vector2) -> void:
                 mode="quest";save.data["mode"]=mode;save.save_all()
             elif _inside(p,818,664,400,67):
                 mode="arcade";save.data["mode"]=mode;save.save_all()
-            elif _inside(p,384,748,834,78):
+            elif _inside(p,384,747,834,79):
                 var current:Dictionary=save.data.get("current",{})
                 if current.get("mode","")==mode and int(current.get("world",-1))==world_index and _resume_saved():
                     return
                 _start_level(world_index,save.unlocked_level(world_index) if mode=="quest" else 1)
-            elif _inside(p,57,820,350,63):
-                state="levels"
-            elif _inside(p,431,820,350,63):
-                settings_return="menu";state="settings"
-            elif _inside(p,805,820,350,63):
+            elif _inside(p,122,835,360,57):
+                mode="quest";state="levels"
+            elif _inside(p,616,835,360,57):
                 state="progress"
-            elif _inside(p,1178,820,350,63):
+            elif _inside(p,1110,835,360,57):
                 album_world=world_index;state="collection"
         "playing":
             if mode=="quest" and _eligible_stars()>0 and _inside(p,952,813,383,69):
@@ -2166,6 +2349,8 @@ func _gesture_tablet(start:Vector2,p:Vector2) -> void:
                         3:_undo_last()
                     return
             _tablet_touch_board(start,p)
+        "relic_reveal":
+            _touch_relic_reveal(p,true)
         "recovery":
             if _inside(p,550,438,500,88):_free_recovery()
             elif _inside(p,550,547,500,88):_start_level(world_index,level)
@@ -2174,6 +2359,12 @@ func _gesture_tablet(start:Vector2,p:Vector2) -> void:
             elif _inside(p,555,391,490,92):settings_return="paused";state="settings"
             elif _inside(p,555,512,490,92):_save_current();state="menu"
         "victory","failure":
+            if state=="victory" and not save.next_relic_reward().is_empty():
+                if _inside(p,550,438,500,88):
+                    _offer_relic_reward("next")
+                elif _inside(p,550,547,500,88):
+                    _offer_relic_reward("home")
+                return
             if _inside(p,550,438,500,88):
                 if mode=="arcade":_start_arcade(world_index)
                 elif state=="victory":_start_level(world_index,mini(12,level+1))
@@ -2187,16 +2378,17 @@ func _gesture_tablet(start:Vector2,p:Vector2) -> void:
                 _save_current()
         "levels":
             if _inside(p,40,28,200,72):state="menu";return
-            for i in range(12):
-                var xx:=275+(i%6)*206
-                var yy:=190+int(i/6)*280
-                if _inside(p,xx,yy,180,215) and i+1<=save.unlocked_level(world_index):
+            for i in range(LEVEL_COUNT):
+                if _map_rect(i,true).has_point(p) and i+1<=save.unlocked_level(world_index):
                     _start_level(world_index,i+1);return
         "collection":
             if _inside(p,50,30,200,75):state="menu"
             else:
                 for w in range(4):
                     if _inside(p,360+w*288,129,269,72):album_world=w
+                for i in range(4):
+                    if _inside(p,125+i*375,324,305,340) and save.has_relic(album_world,i):
+                        save.acknowledge_relic(album_world,i)
         "progress":
             if _inside(p,50,30,200,75):state="menu"
         "settings","settings_fx":
