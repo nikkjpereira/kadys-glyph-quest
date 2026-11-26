@@ -65,6 +65,20 @@ jobs:
           grep -q "PASS: V0.7 VISUAL FX" build/visuals_v07.log
           if grep -E "SCRIPT ERROR|V07 VISUAL FAIL" build/visuals_v07.log; then exit 1; fi
 
+      - name: Validate v0.7.5 offline relics, rewards, and progression
+        run: |
+          timeout 55s godot --headless --path . --script res://tests/rewards_v075.gd 2>&1 | tee build/rewards-v075.log
+          grep -q "PASS: V0.7.5 REWARDS" build/rewards-v075.log
+          if grep -E "SCRIPT ERROR|V075 FAIL" build/rewards-v075.log; then exit 1; fi
+
+      - name: Capture v0.7.5 home, map and reward presentation
+        run: |
+          timeout 120s xvfb-run -a -s "-screen 0 2300x2000x24" godot --path . --resolution 720x1440 --rendering-method gl_compatibility --script res://tools/capture_v075.gd 2>&1 | tee build/capture-v075.log
+          grep -q "PASS: V0.7.5 UI CAPTURE" build/capture-v075.log
+          for image in home_phone home_tablet home_landscape world_map_phone map_landscape relic_found_phone relic_found_landscape collection_phone; do
+            test -s "build/visual/v075_$image.png"
+          done
+
       - name: Capture actual Godot screens for visual QA
         run: |
           mkdir -p build/visual
